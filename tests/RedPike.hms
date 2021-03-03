@@ -1,0 +1,25 @@
+
+encrypt(u32 x[], u32 k[])
+{
+  const CONST = 0x9E3779B9;
+  u32 rk0, rk1, x0, x1;
+  
+  {
+    rk0 <-> k[0]; rk1 <-> k[1];
+  } @ {
+    x0 <-> x[0]; x1 <-> x[1];
+    for (i = 0; 16) {
+      rk0 += CONST;
+      rk1 -= CONST;
+      x0 ^= rk0;
+      x0 += x1;
+      x0 <<= x1;
+      x1 >>= x0;
+      x1 -= x0;
+      x1 ^= rk1;
+      i++;
+    }
+    rk0 -= CONST<<4; rk1 += CONST<<4;
+  }
+  x0 <-> x[1]; x1 <-> x[0];
+}

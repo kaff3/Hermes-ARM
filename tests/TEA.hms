@@ -1,0 +1,16 @@
+
+encrypt (u32 v[], u32 k[])
+{
+    u32 v0, v1, k0, k1, k2, k3;
+    public u32 sum;
+    const delta = 0x9E3779B9;                        /* key schedule constant */
+    v0 <-> v[0]; @ v1 <-> v[1]; @                       /* set up */
+    k0 += k[0]; @ k1 += k[1]; @ k2 += k[2]; @ k3 += k[3]; @ /* cache key */
+    for (i=0; 32) {                                  /* basic cycle start */
+        sum += delta;
+        v0 += ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
+        v1 += ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
+        i++;
+    }                                                /* end cycle */
+    sum -= delta << 5;   /* alternatively, sum -= 0xC6EF3720 */
+}

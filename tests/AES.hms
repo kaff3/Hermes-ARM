@@ -1,0 +1,105 @@
+
+aes_ecb(u8 mk[], u8 s[], u8 sbox[], u8 sboxInv[],
+        u8 M0x3[], u8 M0xe[], u8 M0xb[], u8 M0xd[], u8 M0x9[]) {
+  u8 x[16], k[16];
+  public u8 rc;
+  {
+    rc ++; 
+      
+    // copy 128-bit plain text
+    for(i=0; 16) {
+      k[i] ^= mk[i];
+      i++;
+    }
+  } @ {
+    // copy 28-bit master key to x
+    for(i=0; 16) {
+      x[i] <-> s[i];
+      i++;
+    }
+  
+    for(round = 0; 11) {
+      // AddRoundKey
+      for(i = 0; 16) {
+        s[i] <-> x[i];
+        s[i] ^= k[i];
+        i++;
+      }
+    
+      // if last round, stop
+      if(round != 10) {
+        {
+	  public u8 tp;
+	  u8 t;
+          // AddConstant
+          k[0] ^= rc;
+          rc <<= 1;
+          { tp += rc & 1; @ if (tp) rc ^= 0x1a; }
+      
+          // ExpandKey
+          for(i=0; 4) {
+            t ^= k[12+((i-3)&3)]; @ k[i] ^= unsafe sbox[t];
+            i++;
+          }
+          for(i=0; 12) {
+            t ^= k[i]; @ k[i+4] ^= t;
+            i++;
+          }
+	}
+        // SubBytes and ShiftRows
+        for (i=0; 16) {
+          x[(13*i)&15] ^= unsafe sbox[s[i]];
+          s[i] ^= unsafe sboxInv[x[(13*i)&15]];
+          i++;
+        }
+        // if not last round
+        if(round!=9) {
+          // MixColumns
+          for(i=0; 16) {
+            u8 a, b, c, d;
+            a ^= x[i];
+            b ^= x[i+1];
+            c ^= x[i+2];
+            d ^= x[i+3];
+            x[i] ^= unsafe M0x3[a^b] ^ c ^ d;
+            x[i+1] ^= unsafe M0x3[b^c] ^ a ^ d;
+            x[i+2] ^= unsafe M0x3[c^d] ^ a ^ b;
+            x[i+3] ^= unsafe M0x3[a^d] ^ b ^ c;
+            a ^= unsafe M0xe[x[i]] ^ unsafe M0xb[x[i+1]] ^
+                 unsafe M0xd[x[i+2]] ^ unsafe M0x9[x[i+3]];
+            b ^= unsafe M0x9[x[i]] ^ unsafe M0xe[x[i+1]] ^
+                 unsafe M0xb[x[i+2]] ^ unsafe M0xd[x[i+3]];
+            c ^= unsafe M0xd[x[i]] ^ unsafe M0x9[x[i+1]] ^
+                 unsafe M0xe[x[i+2]] ^ unsafe M0xb[x[i+3]];
+            d ^= unsafe M0xb[x[i]] ^ unsafe M0xd[x[i+1]] ^
+                 unsafe M0x9[x[i+2]] ^ unsafe M0xe[x[i+3]];
+            i += 4;
+          }
+        } else ;
+      } else ;
+      round++;
+    }
+  
+    {
+      public u8 tp;
+      u8 t;
+      for(round = 11; 0) {
+        round--;
+        if(round != 10) {
+          for(i=12; 0) {
+  	    i--;
+	    t ^= k[i]; @ k[i+4] ^= t;
+          }
+          for(i=4; 0) {
+	    i--;
+  	    t ^= k[12+((i-3)&3)]; @ k[i] ^= unsafe sbox[t];
+          }
+      
+          { tp += rc&1; @ if (tp) rc ^= 0x1a; }
+          rc >>= 1;
+          k[0] ^= rc;
+        } else ;
+      }
+    }
+  }
+}

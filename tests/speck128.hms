@@ -1,0 +1,27 @@
+
+speck128(u64 ct[], u64 K[])
+{
+   u64 y, x, b, a;
+   { y <-> ct[0]; x <-> ct[1]; b += K[0]; a += K[1]; } @
+   {
+     call Rs(x, y, b);
+     for (i=0; 31) {
+       call Rp(a, b, i);
+       call Rs(x, y, b);
+       i++;
+     }
+     for (i=31; 0) {  /* restore a and b */
+       i--;
+       uncall Rp(a, b, i);
+     }
+   }
+}
+
+/* two variants of R needed because one is called with secret k
+   and another with public k */
+
+Rs(u64 x, u64 y, secret u64 k)
+{ x >>= 8; x += y; x ^= k; y <<= 3; y ^= x; }
+
+Rp(u64 x, u64 y, public u64 k)
+{ x >>= 8; x += y; x ^= k; y <<= 3; y ^= x; }

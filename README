@@ -1,0 +1,173 @@
+This is a short introduction for how to use the Hermes interpreter,
+partial evaluator, and compiler.
+
+To compile and run the programs, you need to have Moscow ML installed,
+including mosmlex and mosmlyac (https://mosml.org).  When you have
+done so and unzipped Hermes.zip, you can compile the programs by
+
+source compile.sh
+
+This will generate four executables: hi, hr, hpe, and hcX64.
+
+hi is the Hermes reference interpreter.  To run it, write
+
+./hi program
+
+or
+
+./hi -r program
+
+where program.hms is a Hermes program.  Note that you should not write
+the extension.  Using the -r option will run the program backwards.
+
+The interpreter will run the first procedure in the program file, read
+input from standard input and write output to standard output.  Each
+parameter to the procedure is entered and written on a single line.
+Arrays are input as a sequence of space-delimited integers in either
+decimal (e.g. 255) or hexadecimal (e.g. 0xff) format and terminated
+with a newline.  Scalar variables are input as a single number
+terminated by a newline.  Execution starts when all inputs have been
+entered.  Output is one parameter per line as above, but all numbers
+are written in hexadecimal format.
+
+Example:
+
+./hi speck128
+12 34
+56 78
+
+outputs
+
+0xf17e59c91f0ea5e1 0x80a2000ed9518f7a 
+0x38 0x4e 
+
+
+hr is the assertion reifier.  It takes a program and does two things:
+
+ 1. It makes a forwards and a backwards version of every procedure
+    (adding suffixes _F and _B to the procedure names).  All uncalls
+    are changed to calls to the backwards procedures.
+
+ 2. It turns all run-time checks into explicit assertions.
+
+The reifier is primarily meant as a preprocessor for the partial
+evaluator, but it can also be used on its own as a preprocessor to a
+compiler.  Running the reifier is done by
+
+./hr program
+
+The reified program is output to standard output.
+
+
+hpe is the partial evaluator.  It assumes all public variables and all
+array sizes are known (static) and all secret variables are unknown
+(dynamic).  It is run by
+
+./hpe program
+
+or
+
+./hpe -r program
+
+Input is given as follows:
+
+ - A static variable or array is input as for the interpreter.
+ - A dynamic variable is not input (not even as a blank line).
+ - A dynamic array is input as a single integer, which indicates its
+   size.
+
+The residual (specialised) program is output to standard output.  No
+other output is given, even if there are static parameters.  The -r
+option specialises the backwards version of the program.
+
+The program is specialised to a single procedure with all secret
+(dynamic) parameters unchanged and all public (static) parameters
+eliminated.  All procedure calls are inlined, all loops are unrolled,
+and if-then-else statements reduced to one of their branches, so the
+body of the procedure consists of nested blocks containing only
+updates, swaps, and conditional swaps. The only remaining assertions
+are for secret variables and arrays being zeroed at the end of their
+scopes and index checks for unsafe array lookups.  No other assertions
+need to be checked when running the residual program.  This makes the
+output of the partial evaluator relatively easy to compile.
+
+Note that, since the program is passed through the reifier, the
+procedure is in the forwards version suffixed with "_F" and in the
+backwards version with "_B".
+
+Example:
+
+./hpe speck128 > speck128Resid.hms
+2
+2
+
+outputs the residual program in the file speck128Resid.hms This can be
+run as the normal speck128 program above (note that there are no
+public parameters).
+
+
+hcX64, the Hermes to x86-64 compiler first runs the partial evaluator,
+so it reads the same inputs as this, and uses the same suffixes for
+procedures, but it also has command-line options:
+
+./hcX64 speck128 > speck128.c
+2
+2
+
+will produce a C program (containing inline x86-64 assembler) that
+behaves like the interpreter (reading inputs and writing outputs).
+
+./hcX64 -r speck128 > speck128-inverse.c
+2
+2
+
+produces a C program for the inverse program.
+
+./hcX64 -c speck128 > speck128-bare.c
+2
+2
+
+produces a C program only containing the encryption procedure and some
+#includes of header files.  Option -cr does this for the reverse
+procedure.
+
+The inline assembler is wrapped in a C function that returns 0 if no
+assertions fail, and if an assertion fails in source line L column C,
+it returns 10000*L+C.  Note that a tab counts as one character when
+calculating columns.
+
+The AES program uses a different main function that sets up some
+tables for sboxes and the mix-columns step, so use the -c option to
+produce AES-bare.c and then compile AES.c (without optimisation
+flags!).  After setting up the tables, the program calls the
+encryption function 10^7 times with changing data and text and
+compares the result to an expected result.  AES.c and the program
+AES-reference.c are based on the 8-bit version of AES Dust
+(https://github.com/odzhan/aes_dust), but considerably simplified and
+somewhat optimised.
+
+When compiling AES, you need to specify the sizes of the arrays, one
+line per array.  This means you have to run
+
+./hcX64 AES > AES-bare.c
+16
+16
+256
+256
+256
+256
+256
+256
+256
+
+Note that compiling AES takes about half an hour (!) due to the
+quadratic nature of register allocation and the fact that register
+allocation has to be done twice due to spilling.  The other
+ciphers compile quickly.  Spilled pseudo-registers are shown on
+strErr.
+
+The reference versions of the other ciphers have main programs similar
+to those generated by the compiler (actually copy-pasted from those),
+but modified to call the encryption function 10^8 times.  The
+generated C programs can easily be modified to do the same, which is
+done for the timings in the paper.
