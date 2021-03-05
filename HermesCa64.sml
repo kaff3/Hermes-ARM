@@ -3,6 +3,49 @@
 structure HermesCa64 = 
 struct
 
+fun translateUop Hermes.Add = "ADD"
+  | translateUop Hermes.Sub = "SUB"
+  | translateUop Hermes.RoL = "ROR" (*Take care!!!*)
+  | translateUop Hermes.Ror = "ROR"
+  | translateUop Hermes.XorWith = "EOR"
+
+
+fun evalLval lval env pos : (int, string) =
+  case lval of
+    Hermes.Var(x, p1) =>
+      val (t1, loc) HermesCx64.lookup x env
+      val size = HermesCx64.hSize t1
+      val bits = 8 * HermesCx64.size2bytes size
+      val opc  = translateUop uop 
+      (size, opc)
+
+fun compileExp exp pos =
+  case exp of
+    Hermes.Const(s, p) =>
+      val hNum = BigInt.string2h s p
+      val hNumSized = BigInt.limitZ
+
+fun compileStat stat env =
+  (case stat of
+    Hermes.Skip => []
+    (* | Hermes.Update (uop, Hermes.Var (name1, p1), Hermes.Const (name2, p2), pos) => *)
+    | Hermes.Update (uop, lval, e, pos) =>
+      
+      let
+        val (size, _lval) = evalLval lval env pos
+
+      val _uop = 
+        case uop of
+          Hermes.Add =>
+            [(, )]
+
+
+
+
+  )
+
+
+
 fun compileProcedure f args body =
   let
     val parameterLocations =
