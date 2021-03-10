@@ -42,15 +42,15 @@ struct
               "\n\nint main() {\n" ^
               "  char *line, *c;\n" ^
               "  int i, err;\n" ^
-              HermesCx64.declareArgs args ^ "\n" ^
+              HermesCa64.declareArgs args ^ "\n" ^
 	      "  line = (char *)malloc(2048);\n" ^
-              HermesCx64.readArgs args ^
-              "  err = " ^ f ^ "(" ^ HermesCx64.callArgs args ^ ");\n\n" ^
+              HermesCa64.readArgs args ^
+              "  err = " ^ f ^ "(" ^ HermesCa64.callArgs args ^ ");\n\n" ^
 	      "  if (err)\n" ^
 	      "    printf(\"Assertion failed in line %d col. %d\\n\",\n" ^
 	      "           err/10000,err%10000);\n" ^
 	      "  else {\n" ^
-              HermesCx64.printArgs args ^
+              HermesCa64.printArgs args ^
               "  \n}\n}\n"
 	     else "")
 	in

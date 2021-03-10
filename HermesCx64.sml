@@ -450,20 +450,20 @@ fun compileStat stat env =
     Hermes.Skip => []
   | Hermes.Update (uop, Hermes.Var (x, p1), Hermes.Const (n, p2), pos) =>
       let
-        val (t1, loc) = lookup x env p1
-        val size = hSize t1
-	val bits = 8 * size2bytes size
-	val opc = translateUop uop pos
-	val hNum = BigInt.string2h n pos
-	val hNumSized = BigInt.limitZ bits hNum
-	val n1 = BigInt.h2hString  hNumSized
-	val maxImm = BigInt.string2h "0x7fffffff" pos
+        val (t1, loc) = lookup x env p1 (*is variable defined*)
+        val size = hSize t1 (*size of the variable,m ie U16*)
+	val bits = 8 * size2bytes size (*size in bits*)
+	val opc = translateUop uop pos (*update operator*)
+	val hNum = BigInt.string2h n pos (*const in hex*)
+	val hNumSized = BigInt.limitZ bits hNum (*limit const to size of variable*)
+	val n1 = BigInt.h2hString  hNumSized (*hex to hex string*)
+	val maxImm = BigInt.string2h "0x7fffffff" pos (*largest size of immediate in inst?*)
       in
         if BigInt.hGeq64 maxImm hNumSized then (* fits in immediate *)
           [(opc, size, x86.Constant n1, loc)]
 	else
           [("mov", size, x86.Constant n1, x86.Register rcx),
-	   (opc, size, x86.Register rcx,  loc)]
+	   (opc, size, x86.Register rcx,  loc)] (*RCX used as scratch register*)
       end
   | Hermes.Update (uop, Hermes.Var (x, p1),
                         Hermes.Rval (Hermes.Var (y, p2)), pos) =>
@@ -865,7 +865,7 @@ fun compileProcedure f args body =
     val bodyCode = compileStat body env
     val epilogue1 =
           [("exit_label_:", 9, x86.NoOperand, x86.NoOperand),
-	   ("mov", 3,  x86.Offset (rbp, "-102"), x86.Register 0)]
+	   ("mov", 3,  x86.Offset (rbp, "-102"), x86.Register 0)] (*fejlhåndtering*)
     val epilogue2 = (* restore callee-saves variables *)
           [("mov", 3, x86.Offset (rbp, "-54"), x86.Register 1),
 	   ("mov", 3, x86.Offset (rbp, "-62"), x86.Register 12),
