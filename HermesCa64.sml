@@ -44,6 +44,15 @@ fun compileStat stat env =
 
   )
 
+fun compileA64Args [] locs = ([], [], [])
+    | compileA64Args _ [] = 
+        raise Error ("Not enough parameter locations", (0,0))
+    | compileA64Args (Hermes.VarArg (x, (_, it), _) :: args) (l1 :: locs) = 
+        let
+          val (env, code0, code1) = compileA64Args args locs
+          val r = newRegister (); val r1 = newRegister ()
+          in
+            ((x,(it,x86.Register r)))
 
 
 fun compileProcedure f args body =
@@ -53,29 +62,42 @@ fun compileProcedure f args body =
       List.map (fn n => x86.Offset(rbp, signedToString n))
                [16,24,32,40,48]
     val arglist = compileCArgs args
-    val (env, prologue1, epilogue0) = compileX86Args args parameterLocations
-    val prologue2 = (* save callee-saves variables *)
-          [("mov", 3, x86.Register 1, x86.Offset (rbp, "-54")),
-	   ("mov", 3, x86.Register 12, x86.Offset (rbp, "-62")),
-	   ("mov", 3, x86.Register 13, x86.Offset (rbp, "-70")),
-	   ("mov", 3, x86.Register 14, x86.Offset (rbp, "-78")),
-	   ("mov", 3, x86.Register 15, x86.Offset (rbp, "-86")),
-	   ("mov", 3, x86.Register rsp, x86.Offset (rbp, "-94")),
-	   ("mov", 3, x86.Constant "0", x86.Offset (rbp, "-102")),
-	   ("lea", 3, x86.Offset (rbp, "-999"), x86.Register rsp)]
+    val (env, prologue1, epilogue0) = compileA64Args args parameterLocations
+    val saveCallee = (* save callee-saves variables *)
+          [(a64.STR, a64.Register (19, 1), a64.ImmOffset (a64.fp, "-56"), a64.NoOperand),
+          (a64.STR, a64.Register (20, 1), a64.ImmOffset (a64.fp, "-64"), a64.NoOperand),
+          (a64.STR, a64.Register (21, 1), a64.ImmOffset (a64.fp, "-72"), a64.NoOperand),
+          (a64.STR, a64.Register (22, 1), a64.ImmOffset (a64.fp, "-80"), a64.NoOperand),
+          (a64.STR, a64.Register (23, 1), a64.ImmOffset (a64.fp, "-88"), a64.NoOperand),
+          (a64.STR, a64.Register (24, 1), a64.ImmOffset (a64.fp, "-96"), a64.NoOperand),
+          (a64.STR, a64.Register (25, 1), a64.ImmOffset (a64.fp, "-104"), a64.NoOperand),
+          (a64.STR, a64.Register (26, 1), a64.ImmOffset (a64.fp, "-112"), a64.NoOperand),
+          (a64.STR, a64.Register (27, 1), a64.ImmOffset (a64.fp, "-120"), a64.NoOperand),
+          (a64.STR, a64.Register (28, 1), a64.ImmOffset (a64.fp, "-128"), a64.NoOperand),
+          (a64.STR, a64.Register (31, 1), a64.ImmOffset (a64.fp, "-136"), a64.NoOperand) (* error code *)
+          (* move stackpointer *)
+          (* spilled variables *) 
+          ]
+    
     val bodyCode = compileStat body env
     val epilogue1 =
-          [("exit_label_:", 9, x86.NoOperand, x86.NoOperand),
-	   ("mov", 3,  x86.Offset (rbp, "-102"), x86.Register 0)]
-    val epilogue2 = (* restore callee-saves variables *)
-          [("mov", 3, x86.Offset (rbp, "-54"), x86.Register 1),
-	   ("mov", 3, x86.Offset (rbp, "-62"), x86.Register 12),
-	   ("mov", 3, x86.Offset (rbp, "-70"), x86.Register 13),
-	   ("mov", 3, x86.Offset (rbp, "-78"), x86.Register 14),
-	   ("mov", 3, x86.Offset (rbp, "-86"), x86.Register 15),
-	   ("mov", 3, x86.Offset (rbp, "-94"), x86.Register rsp)]
-    val epilogue3 = [("xor", 3, x86.Register 10, x86.Register 10),
-    		     ("xor", 3, x86.Register 11, x86.Register 11)]
+          [(a64.Label ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
+	        (a64.LDR, a64.Register (0, 1), a64.ImmOffset (a64.fp, "-136"), a64.NoOperand)]
+    val restoreCallee = (* restore callee-saves variables *)
+          [(a64.LDR, a64.Register (19, 1), a64.ImmOffset (a64.fp, "-56"), a64.NoOperand),
+          (a64.LDR, a64.Register (20, 1), a64.ImmOffset (a64.fp, "-64"), a64.NoOperand),
+          (a64.LDR, a64.Register (21, 1), a64.ImmOffset (a64.fp, "-72"), a64.NoOperand),
+          (a64.LDR, a64.Register (22, 1), a64.ImmOffset (a64.fp, "-80"), a64.NoOperand),
+          (a64.LDR, a64.Register (23, 1), a64.ImmOffset (a64.fp, "-88"), a64.NoOperand),
+          (a64.LDR, a64.Register (24, 1), a64.ImmOffset (a64.fp, "-96"), a64.NoOperand),
+          (a64.LDR, a64.Register (25, 1), a64.ImmOffset (a64.fp, "-104"), a64.NoOperand),
+          (a64.LDR, a64.Register (26, 1), a64.ImmOffset (a64.fp, "-112"), a64.NoOperand),
+          (a64.LDR, a64.Register (27, 1), a64.ImmOffset (a64.fp, "-120"), a64.NoOperand),
+          (a64.LDR, a64.Register (28, 1), a64.ImmOffset (a64.fp, "-128"), a64.NoOperand),
+          (a64.LDR, a64.Register (31, 1), a64.ImmOffset (a64.fp, "-136"), a64.NoOperand)
+          ]
+        val epilogue3 = [("xor", 3, x86.Register 10, x86.Register 10),
+    		     ("xor", 3, x86.Register 11, x86.Register 11)] (* Zero caller-saves registers not used for parameters *)
     val allCode =
           prologue1 @ prologue2 @ bodyCode @
 	  epilogue0 @ epilogue1 @ epilogue2 @ epilogue3
