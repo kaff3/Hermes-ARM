@@ -26,7 +26,20 @@ struct
                (*TODO pseudo registers?*)
     
     val argRegs = [0,1,2,3,4,5,6,7,8]
-    val returnReg = 
+    
+    datatype operand 
+        = Register of int
+        | Constant of string
+        | Literal of string
+        | NoOperand
+    
+    datatype opcode
+        = LDR | STR
+
+
+    (* instruction *)
+    type inst = opcode * operand * operand * operand
+     
     
 
 

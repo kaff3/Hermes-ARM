@@ -3,6 +3,7 @@
 structure HermesCa64 = 
 struct
 
+(* TODO: strings eller a64.ADD osv? *)
 fun translateUop Hermes.Add = "ADD"
   | translateUop Hermes.Sub = "SUB"
   | translateUop Hermes.RoL = "ROR" (*Take care!!!*)
@@ -10,34 +11,85 @@ fun translateUop Hermes.Add = "ADD"
   | translateUop Hermes.XorWith = "EOR"
 
 
-fun evalLval lval env pos : (int, string) =
+(* Used for creation of pseudo registers *)
+val regCounter = ref 32
+fun newRegister () =
+  (regCounter := !regCounter + 1; !regCounter)
+
+
+
+(* fun evalLval lval env pos : (int, string) =
   case lval of
     Hermes.Var(x, p1) =>
       val (t1, loc) HermesCx64.lookup x env
       val size = HermesCx64.hSize t1
       val bits = 8 * HermesCx64.size2bytes size
       val opc  = translateUop uop 
-      (size, opc)
+      (size, opc) *)
 
-fun compileExp exp pos =
+(* parameters: args, locations *)
+fun compileA64Args [] 
+
+fun compileExp exp target env pos =
   case exp of
-    Hermes.Const(s, p) =>
-      val hNum = BigInt.string2h s p
-      val hNumSized = BigInt.limitZ
+    Hermes.Const(n, _) =>
+      (* LDR Rn, =0x87654321 *)
+      [(a64.LDR, target, a64.Literal(n), a64.NoOperand)]
+      
 
 fun compileStat stat env =
   (case stat of
     Hermes.Skip => []
     (* | Hermes.Update (uop, Hermes.Var (name1, p1), Hermes.Const (name2, p2), pos) => *)
     | Hermes.Update (uop, lval, e, pos) =>
-      
       let
+        val opc = translateUop uop
+        val eReg = newRegister ()
+        val eCode = compileExp e (a64.Register eReg) env pos
+      in
+      case lval of
+        Hermes.Var(n, p) =>
+
+
+     
+     
+      (* let
+        val opcode = translateUop uop
+      in
+      case (lval, e) of
+        (Hermes.Var (n1, p1), Hermes.Const (n2, p2)) =>
+          let 
+            val (t, loc) = HermesCx64.lookup x env p1
+            val size = HermesCx64.hSize t
+            val bits = 8 * HermesCx64.size2bytes size
+            val hNum = BigInt.string2h n2 pos
+            val hNumSized = BigInt.limitZ bits hNum
+            val n2New = BigInt.h2hstring hNumSized
+            val maxImm = BigInt *)
+
+
+
+      (* let
+        val opcode = translateUop uop
+        val (size, )
+      case lval of 
+        Hermes.Var(name, p) => 
+          let 
+            val (t, loc) = HermesCx64.lookup x env p
+            val size = HermesCx64.hSize t
+            val bits = 8 * HermesCx64.size2bytes size
+            val opcode = translateUop uop
+            val hNum = BigInt.string2h  *)
+
+
+
+      (* let
         val (size, _lval) = evalLval lval env pos
 
       val _uop = 
         case uop of
           Hermes.Add =>
-            [(, )]
+            [(, )] *)
 
 
 
@@ -49,7 +101,7 @@ fun compileStat stat env =
 fun compileProcedure f args body =
   let
     val parameterLocations =
-      List.map x86.Register x86.argRegs @
+      List.map a64.Register a64.argRegs @
       List.map (fn n => x86.Offset(rbp, signedToString n))
                [16,24,32,40,48]
     val arglist = compileCArgs args
