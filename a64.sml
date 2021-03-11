@@ -42,7 +42,7 @@ struct
     | Constant  of string
     | Literal   of string
     | ImmOffset of int * string *int    (* adresss = register + offset (w/x) *)
-    | Imm
+    | Imm       of int
     | SP 
     | NoOperand
 

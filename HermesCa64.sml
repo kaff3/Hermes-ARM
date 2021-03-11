@@ -3,25 +3,18 @@
 structure HermesCa64 = 
 struct
 
+  (*
+      Functions for translanting between Hermes and arm instructions
+  *)
   fun translateUop Hermes.Add = a64.ADD
     | translateUop Hermes.Sub = a64.SUB
     | translateUop Hermes.RoL = a64.ROR (*Take care!!!*)
     | translateUop Hermes.Ror = a64.ROR
     | translateUop Hermes.XorWith = a64.EOR
 
-    (* lookup in environment *)
-  fun lookup x [] pos =
-        raise Error ("undeclared identifier: " ^ x, pos)
-    | lookup x ((y,v) :: env) pos =
-        if x = y then v else lookup x env pos
-
-
-  fun compileExp exp target env pos =
-    case exp of
-      Hermes.Const(n, _) =>
-        (* LDR Rn, =0x87654321 *)
-        [(a64.LDR, target, a64.Literal(n), a64.NoOperand)]
-  
+  (*
+      Helper Functions
+  *)
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
     let 
@@ -49,13 +42,28 @@ struct
         ])
       | _ => ([], [])
     end
-          
 
+
+  (*
+      Functions used for compiling
+  *)
+  (* lookup in environment *)
+  fun lookup x [] pos =
+        raise Error ("undeclared identifier: " ^ x, pos)
+    | lookup x ((y,v) :: env) pos =
+        if x = y then v else lookup x env pos
+
+
+  fun compileExp exp target env pos =
+    case exp of
+      Hermes.Const(n, _) =>
+        (* LDR Rn, =0x87654321 *)
+        [(a64.LDR, target, a64.Literal(n), a64.NoOperand)]
+  
 
   fun compileStat stat env =
     (case stat of
       Hermes.Skip => []
-      (* | Hermes.Update (uop, Hermes.Var (name1, p1), Hermes.Const (name2, p2), pos) => *)
       | Hermes.Update (uop, lval, e, pos) =>
         let
           val opc = translateUop uop
@@ -70,17 +78,18 @@ struct
               val (setup, cleanup) = 
                 case uop of
                   Hermes.RoR => extendBits vReg size
-                  Hermes.RoL => 
+                  | Hermes.RoL => 
                     let
-                      (*RBIT => Rotate bits then right shif tthen rotate again*)
+                      (*Reverse, right rotate, reverse*)
+                      val (set, clean) = extendBits vReg size
+                      val rev = [(a64.RBIT, vReg, vReg, a64.noOperand)]
                     in
+                      (set @ rev, rev @ clean)
                     end
                   | _ => ([], [])
-
             in
               eCode @ setup @ [(opc, vReg, vReg, (a64.Register eReg, 1)] @ cleanup
             end
-
         end
 
 
