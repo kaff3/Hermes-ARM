@@ -30,19 +30,55 @@ struct
     val fp = 29
     val zr = 31
 
-    datatype operand = Register of int * int (* reg, w/x *)
-                | Constant of string
-                | Literal of string
-                | Label of string
-                | ImmOffset of int * string (* adresss = register + offset *)
-                | SP
-                | FP
-                | NoOperand
-z
-    datatype opcode = LDR 
-                | STR
+    datatype operand
+      = Register  of int * int      (* reg, w/x *)
+      | Constant  of string
+      | Literal   of string
+      | ImmOffset of int * string *int    (* adresss = register + offset (w/x) *)
+      | NoOperand
+
+    datatype opcode 
+      = LDR | STR
+      | Label     of string
 
     type inst = opcode * operand * operand * operand 
-    
+
+fun showRegSize 0 = "W"
+  | showRegSize 1 = "X"
+  | showRegSize _ = "X" (* Should never happen *)
+
+fun showOperand (Register (r, s)) =
+    let
+      val regSize = showRegSize s
+      val regNum = Int.toString r
+    in 
+      regSize ^ regNum
+    end
+  (* | showOperand Constant (s) = *)
+  | showOperand (ImmOffset (r, off, s)) =
+    (*TODO: immediate size check?*)
+    let
+      val regNum = Int.toString r
+      val regSize = showRegSize s
+    in
+      ", [" ^ regSize ^ regNum ^ ", " ^ off ^ "]" 
+    end
+  | showOperand (noOperand) = ""
+
+fun showOpcode LDR = "LDR"
+  | showOpcode STR = "STR"
 
 
+fun printInstruction (opc, op1, op2 ,op3) =
+  let
+    val opc = showOpcode opc
+    val op1 = showOperand op1
+    val op2 = showOperand op2
+    val op3 = showOperand op3
+  in 
+    opc ^ op1 ^ op2 ^ op3
+  end
+
+
+
+end

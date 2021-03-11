@@ -31,3 +31,9 @@ clean:
 	rm hcX64.uo
 	rm HermesCx64.ui
 	rm HermesCx64.uo
+	rm HermesCa64.ui
+	rm HermesCa64.uo
+	rm hcA64.ui
+	rm hcA64.uo
+	rm a64.ui
+	rm a64.uo
