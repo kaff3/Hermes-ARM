@@ -15,11 +15,11 @@ struct
       in
         let
           val pgm = HermesParser.Program HermesLexer.Token lexbuf
-	  val _ = HermesTypes.check pgm
-	  val reified = HermesReify.reifyProgram pgm
-	  val partialled = HermesPE.pe reified back
-	  val [(f, args, body, _)] = partialled (* nonexhaustive *)
-	  val compiled = HermesCa64.compileProcedure f args body
+          val _ = HermesTypes.check pgm
+          val reified = HermesReify.reifyProgram pgm
+          val partialled = HermesPE.pe reified back
+          val [(f, args, body, _)] = partialled (* nonexhaustive *)
+          val compiled = HermesCa64.compileProcedure f args body
           val outString =
             "#include <stdio.h>\n" ^
             "#include <stdlib.h>\n" ^
@@ -42,26 +42,27 @@ struct
               "\n\nint main() {\n" ^
               "  char *line, *c;\n" ^
               "  int i, err;\n" ^
-              HermesCa64.declareArgs args ^ "\n" ^
-	      "  line = (char *)malloc(2048);\n" ^
-              HermesCa64.readArgs args ^
-              "  err = " ^ f ^ "(" ^ HermesCa64.callArgs args ^ ");\n\n" ^
-	      "  if (err)\n" ^
-	      "    printf(\"Assertion failed in line %d col. %d\\n\",\n" ^
-	      "           err/10000,err%10000);\n" ^
-	      "  else {\n" ^
-              HermesCa64.printArgs args ^
+              HermesCx64.declareArgs args ^ "\n" ^
+	            "  line = (char *)malloc(2048);\n" ^
+              HermesCx64.readArgs args ^
+              "  err = " ^ f ^ "(" ^ HermesCx64.callArgs args ^ ");\n\n" ^
+              "  if (err)\n" ^
+              "    printf(\"Assertion failed in line %d col. %d\\n\",\n" ^
+              "           err/10000,err%10000);\n" ^
+              "  else {\n" ^
+              HermesCx64.printArgs args ^
               "  \n}\n}\n"
-	     else "")
-	in
-	  TextIO.output (TextIO.stdOut, outString)
+	          else "")
+	      in
+	        TextIO.output (TextIO.stdOut, outString)
         end
           handle Parsing.yyexit ob => errorMess "Parser-exit\n"
                | Parsing.ParseError ob =>
-                   let val (lin,col) = HermesLexer.getPos lexbuf
+                   let 
+                    val (lin,col) = HermesLexer.getPos lexbuf
                    in
-                     errorMess ("Parse-error at line "
-                      ^ makestring lin ^ ", column " ^ makestring col)
+                    errorMess ("Parse-error at line "
+                    ^ makestring lin ^ ", column " ^ makestring col)
                    end
                | HermesLexer.LexicalError (mess,(lin,col)) =>
                      errorMess ("Lexical error: " ^mess^ " at line "
@@ -72,7 +73,7 @@ struct
                | HermesPE.Error (mess, (lin,col)) =>
                      errorMess ("Specialisation error: " ^mess^ " at line "
                       ^ makestring lin ^ ", column " ^ makestring col)
-	       | BigInt.BigIntError (mess, (lin,col)) =>
+	             | BigInt.BigIntError (mess, (lin,col)) =>
                      errorMess ("Numeric error: " ^mess^ " at line "
                       ^ makestring lin ^ ", column " ^ makestring col)
                | HermesCx64.Error (mess, (lin,col)) =>

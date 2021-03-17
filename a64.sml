@@ -24,7 +24,7 @@ struct
               ["W30", "X30"]] (* 31: WZR/XZR/WSP/SP *)
               (* TODO pseudo registers? *)
   
-  val argRegs = [0,1,2,3,4,5,6,7,8]
+  val argRegs = [(0, 1),(1, 1),(2, 1),(3, 1),(4, 1),(5, 1),(6, 1),(7, 1), (8, 1)]
   val returnRegs = [0,1,2,3,4,5,6,7,8]
   val calleeSaves = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
   val fp = 29
@@ -38,23 +38,26 @@ struct
      !regCounter)
 
   datatype operand
-    = Register  of int * int      (* reg, w/x *)
+    = Register  of int * int            (* reg, w/x *)
     | Constant  of string
     | Literal   of string
-    | ImmOffset of int * string *int    (* adresss = register + offset (w/x) *)
+    | ImmOffset of int * string *int    (* adresss = register + offset, (w/x) *)
+    | RegAddr   of int * int            (* register address to ldr/str, (w/x) *)
     | Imm       of int
     | SP 
     | NoOperand
 
   datatype opcode 
     = LDR | STR
-    | Label of string (*not an actual opcode*)
+    | LABEL of string (*not an actual opcode*)
     | ROR
     | EOR
     | ADD | SUB
     | LSL
     | ORR
     | MOV
+    | AND
+    | RBIT
 
   type inst = opcode * operand * operand * operand 
 
@@ -76,13 +79,16 @@ struct
         val regNum = Int.toString r
         val regSize = showRegSize s
       in
-        ", [" ^ regSize ^ regNum ^ ", " ^ off ^ "]" 
+        ", [" ^ regSize ^ regNum ^ ", #" ^ off ^ "]" 
       end
+    | showOperand SP = "SP"
     | showOperand (noOperand) = ""
+    | showOperand _ = ""
 
-  fun showOpcode LDR = "LDR"
-    | showOpcode STR = "STR"
-
+  fun showOpcode LDR = "LDR "
+    | showOpcode STR = "STR "
+    | showOpcode MOV = "MOV "
+    | showOpcode (LABEL s) = s
 
   fun printInstruction (opc, op1, op2 ,op3) =
     let
@@ -91,7 +97,7 @@ struct
       val op2 = showOperand op2
       val op3 = showOperand op3
     in 
-      opc ^ op1 ^ op2 ^ op3
+      "\"" ^ opc ^ op1 ^ op2 ^ op3 ^ "\\n\\t" ^ "\"" ^ "\n"
     end
 
 
