@@ -98,15 +98,19 @@ struct
     | showOpcode (LABEL s) = s
 
   fun printInstruction (opc, op1, op2 ,op3) =
-    let
-      val opc = showOpcode opc
-      val op1 = showOperand op1
-      val op2 = showOperand op2
-      val op3 = showOperand op3
-    in 
-      (* Test if label or something else. Set comma accordingly  *)
-      "\"" ^ opc ^ " " ^ op1 ^ ", " ^ op2 ^ ", " ^ op3 ^ "\\n\\t" ^ "\"" ^ "\n"
-    end
+    case opc of
+      (LABEL l) => "\"" ^ l ^ "\\n\\t\"\n"
+      | _ =>
+        let
+          val [c2, c3] = List.map (fn n => case n of NoOperand => " " | _ => ", ") [op2, op3]
+          val opc = showOpcode opc
+          val op1 = " " ^ (showOperand op1)
+          val op2 = c2 ^ (showOperand op2)
+          val op3 = c3 ^ (showOperand op3)
+        in 
+          (* Test if label or something else. Set comma accordingly  *)
+          "\"" ^ opc ^ op1 ^ op2 ^ op3 ^ "\\n\\t\"\n"
+        end
 
 
 end
