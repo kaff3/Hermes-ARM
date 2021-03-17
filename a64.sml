@@ -79,7 +79,14 @@ struct
         val regNum = Int.toString r
         val regSize = showRegSize s
       in
-        ", [" ^ regSize ^ regNum ^ ", #" ^ off ^ "]" 
+        "[" ^ regSize ^ regNum ^ ", #" ^ off ^ "]" 
+      end
+   | showOperand (RegAddr (r, s)) =
+      let
+        val regSize = showRegSize s
+        val regNum = Int.toString r
+      in
+        "[" ^ regSize ^ regNum ^ "]"
       end
     | showOperand SP = "SP"
     | showOperand (noOperand) = ""
@@ -97,7 +104,8 @@ struct
       val op2 = showOperand op2
       val op3 = showOperand op3
     in 
-      "\"" ^ opc ^ op1 ^ op2 ^ op3 ^ "\\n\\t" ^ "\"" ^ "\n"
+      (* Test if label or something else. Set comma accordingly  *)
+      "\"" ^ opc ^ " " ^ op1 ^ ", " ^ op2 ^ ", " ^ op3 ^ "\\n\\t" ^ "\"" ^ "\n"
     end
 
 
