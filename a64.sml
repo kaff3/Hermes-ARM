@@ -24,7 +24,7 @@ struct
               ["W30", "X30"]] (* 31: WZR/XZR/WSP/SP *)
               (* TODO pseudo registers? *)
   
-  val argRegs = [(0, 1),(1, 1),(2, 1),(3, 1),(4, 1),(5, 1),(6, 1),(7, 1), (8, 1)]
+  val argRegs = [0, 1, 2, 3, 4, 5, 6, 7, 8]
   val returnRegs = [0,1,2,3,4,5,6,7,8]
   val calleeSaves = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
   val fp = 29
@@ -38,11 +38,11 @@ struct
      !regCounter)
 
   datatype operand
-    = Register  of int * int            (* reg, w/x *)
+    = Register  of int            
     | Constant  of string
     | Literal   of string
-    | ImmOffset of int * string *int    (* adresss = register + offset, (w/x) *)
-    | RegAddr   of int * int            (* register address to ldr/str, (w/x) *)
+    | ImmOffset of int * string    (* adresss = register + offset *)
+    | RegAddr   of int            (* register address to ldr/str *)
     | Imm       of int
     | SP 
     | NoOperand
@@ -61,32 +61,29 @@ struct
 
   type inst = opcode * operand * operand * operand 
 
-  fun showRegSize 0 = "W"
+  (* fun showRegSize 0 = "W"
     | showRegSize 1 = "X"
-    | showRegSize _ = "X" (* Should never happen *)
+    | showRegSize _ = "X" (* Should never happen *) *)
 
-  fun showOperand (Register (r, s)) =
+  fun showOperand (Register r) =
       let
-        val regSize = showRegSize s
         val regNum = Int.toString r
       in 
-        regSize ^ regNum
+        "X" ^ regNum
       end
     (* | showOperand Constant (s) = *)
-    | showOperand (ImmOffset (r, off, s)) =
+    | showOperand (ImmOffset (r, off)) =
       (*TODO: immediate size check?*)
       let
         val regNum = Int.toString r
-        val regSize = showRegSize s
       in
-        "[" ^ regSize ^ regNum ^ ", #" ^ off ^ "]" 
+        "[X" ^ regNum ^ ", #" ^ off ^ "]" 
       end
-   | showOperand (RegAddr (r, s)) =
+   | showOperand (RegAddr r) =
       let
-        val regSize = showRegSize s
         val regNum = Int.toString r
       in
-        "[" ^ regSize ^ regNum ^ "]"
+        "[X" ^ regNum ^ "]"
       end
     | showOperand SP = "SP"
     | showOperand (noOperand) = ""
