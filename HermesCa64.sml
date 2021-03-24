@@ -19,28 +19,27 @@ struct
   fun extendBits src size =
     let 
       val r1 = a64.newRegister ()
+      val maskDown =
+        case size of
+            Hermes.U8 => [(a64.AND, src, src, a64.Imm(0xff))]
+          | Hermes.U16 => [(a64.AND, src, src, a64.Imm(0xffff))]
+          | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))]
+          | Hermes.U64 => []
+      fun extend Hermes.U8 =
+          [(a64.LSL, a64.Register r1, src, a64.Imm(8)),
+          (a64.ORR, src, src, a64.Register r1)] @
+          extend Hermes.U16
+        | extend Hermes.U16 =
+          [(a64.LSL, a64.Register r1, src, a64.Imm(16)),
+          (a64.ORR, src, src, a64.Register r1)] @
+          extend Hermes.U32
+        | extend Hermes.U32 =
+          [(a64.LSL, a64.Register r1, src, a64.Imm(32)),
+          (a64.ORR, src, src, a64.Register r1)] @
+          extend Hermes.U64
+        | extend Hermes.U64 = [] (*to silence compiler*)
     in
-    case size of
-      Hermes.U8 => (* change this to 64 bit instead of 32? *)
-        ([
-          (a64.LSL, a64.Register r1, src, a64.Imm(8)),
-          (a64.ORR, a64.Register r1, a64.Register r1, src),
-          (a64.LSL, src, a64.Register r1, a64.Imm(16)),
-          (a64.ORR, src, src, a64.Register r1)
-        ],
-        [
-          (a64.AND, src, src, a64.Imm(0xff))
-        ])
-      | Hermes.U16 =>
-        ([
-          (a64.MOV, a64.Register r1, src, a64.NoOperand),
-          (a64.LSL, src, src, a64.Imm(16)),
-          (a64.ORR, src, src, a64.Register r1)
-        ],
-        [
-          (a64.AND, src, src, a64.Imm(0xffff))
-        ])
-      | _ => ([], [])
+      (extend size, maskDown)
     end
 
 
@@ -96,9 +95,9 @@ struct
         case lval of
           Hermes.Var(n, p) =>
             let 
-              val (t, vReg) = lookup n env p
+              val (t, vReg) = lookup n env p  
               (* val size = HermesCx64.hSize t *)
-              val (setup, cleanup) = 
+              val (setup, maskDown) = 
                 case uop of
                   Hermes.RoR => extendBits vReg t
                   | Hermes.RoL => 
@@ -111,16 +110,48 @@ struct
                     end
                   | _ => ([], [])
             in
-              eCode @ setup @ [(opc, vReg, vReg, (a64.Register eReg))] @ cleanup
+              eCode @ setup @ [(opc, vReg, vReg, (a64.Register eReg))] @ maskDown
             end
-          (* | Hermes.Array(s, e, p) =>
+          | Hermes.Array(s, i, p) =>
+            (*
+              1. compile i
+              2. load whatever iReg holds
+              3. Do the update
+              4. Write value back to array index location
+            *)
             let
               val (t, vReg) = lookup s env p
-              val eReg = a64.newRegister ()
-              val eCode = compileExp (a64.Register eReg) env p
+              val iReg = a64.newRegister ()
+              val iCode = compileExp i (a64.Register iReg) env p
+              val tmp = a64.newRegister ()
+              val mulReg = a64.newRegister ()
+              (* find ldr and store sizes *)
+              val (ldr, str, reg, off) =
+                case t of
+                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
+                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
+                  | Hermes.U32 => (a64.LDRW, a64.STRW, a64.RegisterW, 3)
+                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  4)
+              val load = 
+                [(a64.MOV, a64.Register mulReg, a64.Imm off, a64.NoOperand),
+                (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
+                (ldr, reg tmp, a64.BaseOffset(vReg, a64.Register iReg), a64.NoOperand)]
+              val save = [(str, reg tmp, a64.BaseOffset(vReg, a64.Register iReg), a64.NoOperand)]
+              val (setup, maskDown) = 
+                case uop of
+                Hermes.RoR => extendBits vReg t
+                | Hermes.RoL =>
+                  let
+                    val (set, clean) = extendBits vReg t
+                    val rev = [(a64.RBIT, vReg, vReg, a64.NoOperand)]
+                  in 
+                    (set @ rev, rev @ clean)
+                  end
+                | _ => ([], [])
             in
-              
-            end *)
+              (* *)
+              eCode @ iCode @ load @ setup @ [(opc, vReg, vReg, (a64.Register tmp))] @ maskDown @ save
+            end
         end
     )
 

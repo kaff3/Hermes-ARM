@@ -38,17 +38,22 @@ struct
      !regCounter)
 
   datatype operand
-    = Register  of int            
+    = Register  of int              (*64 bit*)
+    | RegisterW of int              (*32 bit*)        
     | Constant  of string
     | Literal   of string
-    | ImmOffset of int * string    (* adresss = register + offset *)
-    | RegAddr   of int            (* register address to ldr/str *)
+    | ImmOffset of int * string     (* adresss = register + offset *)
+    | RegAddr   of int              (* register address to ldr/str *)
     | Imm       of int
+    | BaseOffset of operand * operand
     | SP 
     | NoOperand
 
   datatype opcode 
     = LDR | STR
+    | LDRB | STRB     (* <--                             *)
+    | LDRH | STRH     (* <-- Remember to use W registers!*)
+    | LDRW | STRW     (* <--                             *)
     | LABEL of string (*not an actual opcode*)
     | ROR
     | EOR
@@ -58,6 +63,7 @@ struct
     | MOV
     | AND
     | RBIT
+    | MUL
 
   type inst = opcode * operand * operand * operand 
 
