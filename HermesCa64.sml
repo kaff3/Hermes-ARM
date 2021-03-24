@@ -149,9 +149,11 @@ struct
                   end
                 | _ => ([], [])
             in
-              (* *)
+              (* overwrites vReg since all calculations are redone each statement *)
               eCode @ iCode @ load @ setup @ [(opc, vReg, vReg, (a64.Register tmp))] @ maskDown @ save
             end
+          | Hermes.UnsafeArray(s, i, p) =>
+              compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env       
         end
     )
 
