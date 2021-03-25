@@ -130,8 +130,8 @@ struct
                 case t of
                   Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
                   | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
-                  | Hermes.U32 => (a64.LDRW, a64.STRW, a64.RegisterW, 3)
-                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  4)
+                  | Hermes.U32 => (a64.LDRW, a64.STRW, a64.RegisterW, 4)
+                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  8)
               val load = 
                 [(a64.MOV, a64.Register mulReg, a64.Imm off, a64.NoOperand),
                 (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
