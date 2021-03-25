@@ -67,7 +67,7 @@ struct
         [(a64.LDR, target, a64.Literal(n), a64.NoOperand)]
       | (Hermes.Rval lval )=>
         case lval of
-          (Hermes.Var (s, p)) => (*TODO: godkendelse*)
+          (Hermes.Var (s, p)) =>
             let
               val (t, vReg) = lookup s env p
             in
@@ -79,6 +79,7 @@ struct
             in
             
             end *)
+      | _ => [(a64.LABEL "missing compilExp", a64.NoOperand, a64.NoOperand, a64.NoOperand)]
 
         
   
@@ -155,6 +156,7 @@ struct
           | Hermes.UnsafeArray(s, i, p) =>
               compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env       
         end
+      | _ => [(a64.LABEL "missing compilStat", a64.NoOperand, a64.NoOperand, a64.NoOperand)]
     )
 
   fun compileA64Args [] locs = ([], [], [])
@@ -211,7 +213,7 @@ struct
             (a64.STR, a64.Register 31, a64.ImmOffset (a64.fp, "-144"), a64.NoOperand), (* error code *)
             (a64.STR, a64.SP, a64.ImmOffset(a64.fp, "-999"), a64.NoOperand)] (*placeholder, LEA in x86*)
       
-      (* val bodyCode = compileStat body env *)
+      val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
             (a64.LDR, a64.Register 0, a64.ImmOffset (a64.fp, "-144"), a64.NoOperand)]
@@ -230,7 +232,7 @@ struct
           (* val epilogue3 = [("xor", 3, x86.Register 10, x86.Register 10),
               ("xor", 3, x86.Register 11, x86.Register 11)] Zero caller-saves registers not used for parameters *)
       val allCode =
-            prologue1 @ saveCallee (* @ bodyCode *) @
+            prologue1 @ saveCallee  @ bodyCode  @
       epilogue0 @ epilogue1 @ restoreCallee (*@ epilogue3*)
       (* val (newCode, offset) = x86.registerAllocate allCode *)
       (* val newCode1 = replace999 newCode (signedToString offset) *)

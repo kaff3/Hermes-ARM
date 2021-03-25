@@ -1,2 +1,6 @@
 bin/
 tests/*.c
+*.uo
+*.ui
+*.output
+*.sig

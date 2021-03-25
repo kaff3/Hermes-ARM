@@ -67,17 +67,18 @@ struct
 
   type inst = opcode * operand * operand * operand 
 
-  (* fun showRegSize 0 = "W"
-    | showRegSize 1 = "X"
-    | showRegSize _ = "X" (* Should never happen *) *)
+
 
   fun showOperand (Register r) =
-      let
-        val regNum = Int.toString r
-      in 
+      let val regNum = Int.toString r in 
         "X" ^ regNum
       end
+    | showOperand (RegisterW r) =
+      let val regNum = Int.toString r in
+        "W" ^ regNum
+      end
     (* | showOperand Constant (s) = *)
+    | showOperand (Literal n) = "=0x" ^ n
     | showOperand (ImmOffset (r, off)) =
       (*TODO: immediate size check?*)
       let
@@ -92,13 +93,20 @@ struct
         "[X" ^ regNum ^ "]"
       end
     | showOperand SP = "SP"
-    | showOperand (noOperand) = ""
-    | showOperand _ = ""
+    | showOperand noOperand = ""
+    | showOperand _ = "missing case in showOperand"
 
   fun showOpcode LDR = "LDR "
     | showOpcode STR = "STR "
+    | showOpcode LDRB = "LDRB "
+    | showOpcode STRB = "STRB "
+    | showOpcode LDRH = "LDRH "
+    | showOpcode STRH = "STRH "
+    | showOpcode LDRW = "LDRW "
+    | showOpcode STRW = "STRW "
     | showOpcode MOV = "MOV "
     | showOpcode (LABEL s) = s
+    | showOpcode _ = "missing case in showOpcode"
 
   fun printInstruction (opc, op1, op2 ,op3) =
     case opc of
