@@ -42,6 +42,18 @@ struct
       (extend size, maskDown)
     end
 
+  (* Debugging functions *)
+  fun debugStat Hermes.Skip                 = "Skip"
+    | debugStat (Hermes.Update(_,_,_,_))    = "Update"
+    | debugStat (Hermes.Swap(_,_,_))        = "Swap"
+    | debugStat (Hermes.CondSwap(_,_,_,_))  = "CondSwap"
+    | debugStat (Hermes.If(_,_,_,_))        = "If"
+    | debugStat (Hermes.For(_,_,_,_,_))     = "For"
+    | debugStat (Hermes.Call(_,_,_))        = "Call"
+    | debugStat (Hermes.Uncall(_,_,_))      = "Uncall"
+    | debugStat (Hermes.Block(_,_,_))       = "Block"
+    | debugStat (Hermes.Assert(_,_))        = "Assert" 
+
 
   (*
       Functions used for compiling
@@ -79,7 +91,8 @@ struct
             in
             
             end *)
-      | _ => [(a64.LABEL "missing compilExp", a64.NoOperand, a64.NoOperand, a64.NoOperand)]
+      | _ => [(a64.LABEL ("compilExp:" ^ Hermes.showExp exp true), 
+              a64.NoOperand, a64.NoOperand, a64.NoOperand)]
 
         
   
@@ -156,7 +169,8 @@ struct
           | Hermes.UnsafeArray(s, i, p) =>
               compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env       
         end
-      | _ => [(a64.LABEL "missing compilStat", a64.NoOperand, a64.NoOperand, a64.NoOperand)]
+      | _ => [(a64.LABEL ("compilStat: " ^ debugStat stat), 
+              a64.NoOperand, a64.NoOperand, a64.NoOperand)]
     )
 
   fun compileA64Args [] locs = ([], [], [])
