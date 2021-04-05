@@ -76,8 +76,8 @@ struct
     case exp of
       Hermes.Const(n, _) =>
         (* LDR Rn, =0x87654321 *)
-        [(a64.LDR, target, a64.Literal(n), a64.NoOperand)]
-      | (Hermes.Rval lval )=>
+        [(a64.LDR, target, a64.PoolLit n, a64.NoOperand)]
+      (* | (Hermes.Rval lval )=>
         case lval of
           (Hermes.Var (s, p)) =>
             let
@@ -90,11 +90,37 @@ struct
               
             in
             
-            end *)
+            end *) *)
       | _ => [(a64.LABEL ("compilExp:" ^ Hermes.showExp exp true), 
               a64.NoOperand, a64.NoOperand, a64.NoOperand)]
 
-        
+  (* fun compileDecs [] env = ([], env)
+    | compileDecs (Hermes.ConstDecl (_,_,pos) :: dl) env =
+      raise Error ("constants should have been eleminated by PE", pos)
+    | compileDecs (Hermes.VarDecl (s, (_, it), pos) :: dl) env =
+      let 
+        val r1 = a64.newRegister ()
+        val envNew = (s, (it, r1)) :: env
+        val (code1, envNew2) = compileDecs dl envNew
+      in
+        (* XOR because variables are initialized to 0? *)
+        (
+          [(a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)] @ code1,
+          envNew2
+        )
+    | compileDecs (Hermes.ArrayDecl (s, (_, it), exp, pos)) env =
+      (case exp of
+        Hermes.Const (n, p1) =>
+          let 
+            val r1 = a64.newRegister ()
+            val envNew = (s, (it, r1)) :: env
+            val 
+            (*
+            add vReg, vReg, r1
+            str reg0 vReg
+            *)
+      
+      ) *)
   
 
   fun compileStat stat env =
@@ -113,18 +139,20 @@ struct
               (* val size = HermesCx64.hSize t *)
               val (setup, maskDown) = 
                 case uop of
-                  Hermes.RoR => extendBits vReg t
+                  Hermes.RoR => extendBits (a64.Register vReg) t
                   | Hermes.RoL => 
                     let
                       (* Reverse, right rotate, reverse *)
-                      val (set, clean) = extendBits vReg t
-                      val rev = [(a64.RBIT, vReg, vReg, a64.NoOperand)]
+                      val (set, clean) = extendBits (a64.Register vReg) t
+                      val rev = [(a64.RBIT, a64.Register vReg, a64.Register vReg, a64.NoOperand)]
                     in
                       (set @ rev, rev @ clean)
                     end
                   | _ => ([], [])
             in
-              eCode @ setup @ [(opc, vReg, vReg, (a64.Register eReg))] @ maskDown
+              eCode @ setup @ 
+              [(opc, a64.Register vReg, a64.Register vReg, (a64.Register eReg))] @ 
+              maskDown
             end
           | Hermes.Array(s, i, p) =>
             (*
@@ -142,35 +170,39 @@ struct
               (* find ldr and store sizes *)
               val (ldr, str, reg, off) =
                 case t of
-                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
-                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
-                  | Hermes.U32 => (a64.LDRW, a64.STRW, a64.RegisterW, 4)
-                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  8)
+                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 0)
+                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 1)
+                  | Hermes.U32 => (a64.LDRW, a64.STRW, a64.RegisterW, 2)
+                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  3)
               val load = 
-                [(a64.MOV, a64.Register mulReg, a64.Imm off, a64.NoOperand),
-                (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
-                (ldr, reg tmp, a64.BaseOffset(vReg, a64.Register iReg), a64.NoOperand)]
-              val save = [(str, reg tmp, a64.BaseOffset(vReg, a64.Register iReg), a64.NoOperand)]
+                [(a64.LSL, a64.Register iReg, a64.Register iReg, a64.Imm off),
+                (ldr, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
+              val save = [(str, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
               val (setup, maskDown) = 
                 case uop of
-                Hermes.RoR => extendBits vReg t
+                Hermes.RoR => extendBits (a64.Register vReg) t
                 | Hermes.RoL =>
                   let
-                    val (set, clean) = extendBits vReg t
-                    val rev = [(a64.RBIT, vReg, vReg, a64.NoOperand)]
+                    val (set, clean) = extendBits (a64.Register vReg) t
+                    val rev = [(a64.RBIT, (a64.Register vReg), (a64.Register vReg), a64.NoOperand)]
                   in 
                     (set @ rev, rev @ clean)
                   end
                 | _ => ([], [])
             in
               (* overwrites vReg since all calculations are redone each statement *)
-              eCode @ iCode @ load @ setup @ [(opc, vReg, vReg, (a64.Register tmp))] @ maskDown @ save
+              eCode @ iCode @ load @ setup @ 
+              [(opc, a64.Register vReg, a64.Register vReg, (a64.Register tmp))] @ 
+              maskDown @ save
             end
           | Hermes.UnsafeArray(s, i, p) =>
               compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env       
         end
-      | _ => [(a64.LABEL ("compilStat: " ^ debugStat stat), 
-              a64.NoOperand, a64.NoOperand, a64.NoOperand)]
+      (* | Hermes.Block (dl, sl, pos) =>
+        compileDecs skal laves først *)
+      | _ => (* Should never happen only for debugging *)
+        [(a64.LABEL ("compilStat: " ^ debugStat stat), 
+          a64.NoOperand, a64.NoOperand, a64.NoOperand)]
     )
 
   fun compileA64Args [] locs = ([], [], [])
@@ -183,12 +215,12 @@ struct
             val r1 = a64.newRegister ()
           in
             (* call by value result *)
-            ((x, (it, a64.Register r)) :: env,
+            ((x, (it, r)) :: env,
             [(a64.MOV, a64.Register r1, l1, a64.NoOperand),
-            (a64.LDR, a64.Register r, a64.RegAddr r1, a64.NoOperand)]
+            (a64.LDR, a64.Register r, a64.ABase r1, a64.NoOperand)]
             @ code0,
             code1 @
-            [(a64.STR, a64.Register r, a64.RegAddr r1, a64.NoOperand),
+            [(a64.STR, a64.Register r, a64.ABase r1, a64.NoOperand),
             (a64.MOV, l1, a64.Register r1, a64.NoOperand)])
           end
       | compileA64Args (Hermes.ArrayArg (x, (_, it), _) :: args) (l1 :: locs) =
@@ -196,7 +228,7 @@ struct
             val (env, code0, code1) = compileA64Args args locs
             val r = a64.newRegister ()
           in
-            ((x,(it,a64.Register r)) :: env,
+            ((x,(it, r)) :: env,
             [(a64.MOV, a64.Register r, l1, a64.NoOperand)]
             @ code0,
             code1 @
@@ -208,41 +240,41 @@ struct
     let
       val parameterLocations =
         List.map a64.Register a64.argRegs @
-        List.map (fn n => a64.ImmOffset(a64.fp, HermesCx64.signedToString n))
-                [16,24,32,40,48]
+        List.map (fn n => a64.ABaseOffI(a64.fp, n)) 
+                  ["-16","-24","-32","-40","-48"]
       val arglist = HermesCx64.compileCArgs args
       val (env, prologue1, epilogue0) = compileA64Args args parameterLocations
       val saveCallee = (* save callee-saves variables *)
-            [(a64.STR, a64.Register 19, a64.ImmOffset (a64.fp, "-56"), a64.NoOperand),
-            (a64.STR, a64.Register 20, a64.ImmOffset (a64.fp, "-64"), a64.NoOperand),
-            (a64.STR, a64.Register 21, a64.ImmOffset (a64.fp, "-72"), a64.NoOperand),
-            (a64.STR, a64.Register 22, a64.ImmOffset (a64.fp, "-80"), a64.NoOperand),
-            (a64.STR, a64.Register 23, a64.ImmOffset (a64.fp, "-88"), a64.NoOperand),
-            (a64.STR, a64.Register 24, a64.ImmOffset (a64.fp, "-96"), a64.NoOperand),
-            (a64.STR, a64.Register 25, a64.ImmOffset (a64.fp, "-104"), a64.NoOperand),
-            (a64.STR, a64.Register 26, a64.ImmOffset (a64.fp, "-112"), a64.NoOperand),
-            (a64.STR, a64.Register 27, a64.ImmOffset (a64.fp, "-120"), a64.NoOperand),
-            (a64.STR, a64.Register 28, a64.ImmOffset (a64.fp, "-128"), a64.NoOperand),
-            (a64.STR, a64.SP, a64.ImmOffset (a64.fp, "-136"), a64.NoOperand), (* save SP on stack*)
-            (a64.STR, a64.Register 31, a64.ImmOffset (a64.fp, "-144"), a64.NoOperand), (* error code *)
-            (a64.STR, a64.SP, a64.ImmOffset(a64.fp, "-999"), a64.NoOperand)] (*placeholder, LEA in x86*)
+            [(a64.STR, a64.Register 19, a64.ABaseOffI (a64.fp, "-56"), a64.NoOperand),
+            (a64.STR, a64.Register 20, a64.ABaseOffI (a64.fp, "-64"), a64.NoOperand),
+            (a64.STR, a64.Register 21, a64.ABaseOffI (a64.fp, "-72"), a64.NoOperand),
+            (a64.STR, a64.Register 22, a64.ABaseOffI (a64.fp, "-80"), a64.NoOperand),
+            (a64.STR, a64.Register 23, a64.ABaseOffI (a64.fp, "-88"), a64.NoOperand),
+            (a64.STR, a64.Register 24, a64.ABaseOffI (a64.fp, "-96"), a64.NoOperand),
+            (a64.STR, a64.Register 25, a64.ABaseOffI (a64.fp, "-104"), a64.NoOperand),
+            (a64.STR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
+            (a64.STR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
+            (a64.STR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
+            (a64.STR, a64.SP, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand), (* save SP on stack*)
+            (a64.STR, a64.Register 31, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand), (* error code *)
+            (a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] (*placeholder, LEA in x86*)
       
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
-            (a64.LDR, a64.Register 0, a64.ImmOffset (a64.fp, "-144"), a64.NoOperand)]
+            (a64.LDR, a64.Register 0, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
       val restoreCallee = (* restore callee-saves variables *)
-            [(a64.LDR, a64.Register 19, a64.ImmOffset (a64.fp, "-56"), a64.NoOperand),
-            (a64.LDR, a64.Register 20, a64.ImmOffset (a64.fp, "-64"), a64.NoOperand),
-            (a64.LDR, a64.Register 21, a64.ImmOffset (a64.fp, "-72"), a64.NoOperand),
-            (a64.LDR, a64.Register 22, a64.ImmOffset (a64.fp, "-80"), a64.NoOperand),
-            (a64.LDR, a64.Register 23, a64.ImmOffset (a64.fp, "-88"), a64.NoOperand),
-            (a64.LDR, a64.Register 24, a64.ImmOffset (a64.fp, "-96"), a64.NoOperand),
-            (a64.LDR, a64.Register 25, a64.ImmOffset (a64.fp, "-104"), a64.NoOperand),
-            (a64.LDR, a64.Register 26, a64.ImmOffset (a64.fp, "-112"), a64.NoOperand),
-            (a64.LDR, a64.Register 27, a64.ImmOffset (a64.fp, "-120"), a64.NoOperand),
-            (a64.LDR, a64.Register 28, a64.ImmOffset (a64.fp, "-128"), a64.NoOperand),
-            (a64.LDR, a64.SP, a64.ImmOffset (a64.fp, "-136"), a64.NoOperand)]
+            [(a64.LDR, a64.Register 19, a64.ABaseOffI (a64.fp, "-56"), a64.NoOperand),
+            (a64.LDR, a64.Register 20, a64.ABaseOffI (a64.fp, "-64"), a64.NoOperand),
+            (a64.LDR, a64.Register 21, a64.ABaseOffI (a64.fp, "-72"), a64.NoOperand),
+            (a64.LDR, a64.Register 22, a64.ABaseOffI (a64.fp, "-80"), a64.NoOperand),
+            (a64.LDR, a64.Register 23, a64.ABaseOffI (a64.fp, "-88"), a64.NoOperand),
+            (a64.LDR, a64.Register 24, a64.ABaseOffI (a64.fp, "-96"), a64.NoOperand),
+            (a64.LDR, a64.Register 25, a64.ABaseOffI (a64.fp, "-104"), a64.NoOperand),
+            (a64.LDR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
+            (a64.LDR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
+            (a64.LDR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
+            (a64.LDR, a64.SP, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand)]
           (* val epilogue3 = [("xor", 3, x86.Register 10, x86.Register 10),
               ("xor", 3, x86.Register 11, x86.Register 11)] Zero caller-saves registers not used for parameters *)
       val allCode =

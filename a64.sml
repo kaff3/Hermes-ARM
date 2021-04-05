@@ -38,14 +38,20 @@ struct
      !regCounter)
 
   datatype operand
-    = Register  of int              (*64 bit*)
-    | RegisterW of int              (*32 bit*)        
-    | Constant  of string
-    | Literal   of string
-    | ImmOffset of int * string     (* adresss = register + offset *)
-    | RegAddr   of int              (* register address to ldr/str *)
-    | Imm       of int
-    | BaseOffset of operand * operand
+    = Register  of int          (*64 bit*)
+    | RegisterW of int          (*32 bit*)
+
+    | Imm       of int          (* #imm *)
+    | PoolLit   of string          (* Pool Literal *)
+    
+    (* Addressing modes *)
+    | ABase     of int          (* [base] *)
+    | ABaseOffR of int * int    (* [base, Rm] *)
+    | ABaseOffI of int * string    (* [base, #imm] *)
+    | APre      of int * string    (* [base, #imm]! *)
+    | APost     of int * string    (* [base], #imm *)
+
+    (* Specials *)
     | SP 
     | NoOperand
 
@@ -78,22 +84,22 @@ struct
         "W" ^ regNum
       end
     (* | showOperand Constant (s) = *)
-    | showOperand (Literal n) = "=0x" ^ n
-    | showOperand (ImmOffset (r, off)) =
+    | showOperand (PoolLit n) = "=0x" ^ n
+    | showOperand (ABaseOffI (r, off)) =
       (*TODO: immediate size check?*)
       let
         val regNum = Int.toString r
       in
         "[X" ^ regNum ^ ", #" ^ off ^ "]" 
       end
-   | showOperand (RegAddr r) =
+   | showOperand (ABase r) =
       let
         val regNum = Int.toString r
       in
         "[X" ^ regNum ^ "]"
       end
     | showOperand SP = "SP"
-    | showOperand noOperand = ""
+    | showOperand NoOperand = ""
     | showOperand _ = "missing case in showOperand"
 
   fun showOpcode LDR = "LDR "
