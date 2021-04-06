@@ -203,55 +203,40 @@ struct
     case (instrs, gen, kill) of
       ((opc, _, _, _) :: is, g :: gs, k :: ks) =>
         let
-	  val (live1, liveOut, labels) = liveness1 is gs ks
-	  val liveIn =
-	    if String.isPrefix "jmp" opc (* unconditional jump *)
-	    then labels (String.extract (opc, 4, NONE))
-	    else if String.isPrefix "je" opc (* jump equal *)
-	    then setUnion [liveOut, labels (String.extract (opc, 3, NONE))]
-	    else if String.isPrefix "j" opc (* other conditional jump *)
-	    then setUnion [liveOut, labels (String.extract (opc, 4, NONE))]
-	    else setUnion [setMinus liveOut k, g]
-	  val labels1 = (* update label mapping *)
-	    case String.fields (fn c => c = #":") opc of
-	      [l1, ""] => (fn l => if l=l1 then liveIn else labels l)
-	    | _ => labels
-	in
-	  (liveOut :: live1, liveIn, labels1)
-	end
-    | _ => ([],
-            emptyset,
-	    (fn l => raise Error ("label " ^ l ^ " not found\n")))
+          val (live1, liveOut, labels) = liveness1 is gs ks
+          val liveIn =
+            if String.isPrefix "jmp" opc (* unconditional jump *)
+            then labels (String.extract (opc, 4, NONE))
+            else if String.isPrefix "je" opc (* jump equal *)
+            then setUnion [liveOut, labels (String.extract (opc, 3, NONE))]
+            else if String.isPrefix "j" opc (* other conditional jump *)
+            then setUnion [liveOut, labels (String.extract (opc, 4, NONE))]
+            else setUnion [setMinus liveOut k, g]
+          val labels1 = (* update label mapping *)
+            case String.fields (fn c => c = #":") opc of
+              [l1, ""] => (fn l => if l=l1 then liveIn else labels l)
+            | _ => labels
+        in
+          (liveOut :: live1, liveIn, labels1)
+        end
+      | _ => ([], emptyset, (fn l => raise Error ("label " ^ l ^ " not found\n")))
 
   (* finds pairs of interfering registers *)
   fun interfere instrs live kill =
     case (instrs, live, kill) of
       ((opc, _, Register y, Register x) :: ins, lOut :: ls, k :: ks) =>
-        setUnion2
-	  [interfere ins ls ks,
-	   (if String.isPrefix "mov" opc
-            then list2set2
-	           (List.concat
-		     (List.map
-		       (fn z => [(x,z), (z,x)])
-		       (Splayset.listItems (setMinus lOut (list2set [x,y])))))
-            else list2set2
-	           (List.concat
-		     (List.map
-		       (fn z => [(x,z), (z,x)])
-		       (Splayset.listItems (setMinus lOut (list2set [x]))))))]
-    | ((opc, _, _, _) :: ins, lOut :: ls, k :: ks) =>
-        setUnion2
-	  [interfere ins ls ks,
-	   list2set2
-	     (List.concat
-	       (List.map
-	          (fn x =>
-		    List.concat
-		      (List.map
-		         (fn y => [(x,y), (y,x)])
+        setUnion2[interfere ins ls ks, 
+        (if String.isPrefix "mov" opc    
+            then list2set2(List.concat (List.map (fn z => [(x,z), (z,x)])
+		              (Splayset.listItems (setMinus lOut (list2set [x,y])))))
+            else list2set2(List.concat(List.map(fn z => [(x,z), (z,x)])
+		              (Splayset.listItems (setMinus lOut (list2set [x]))))))]
+      
+      | ((opc, _, _, _) :: ins, lOut :: ls, k :: ks) =>
+        setUnion2[interfere ins ls ks, list2set2(List.concat(List.map
+	          (fn x =>List.concat (List.map (fn y => [(x,y), (y,x)])
 	                 (Splayset.listItems (setMinus lOut (list2set [x])))))
-	          (Splayset.listItems k)))]
+	                  (Splayset.listItems k)))]
     | _ => list2set2 []
 
   (* finds register-to-register moves *)
@@ -460,14 +445,13 @@ struct
   
   fun findUses [] = Splaymap.mkDict Int.compare
     | findUses (ins :: instrs) =
-        let
-	  val uses = findUses instrs
-	  val regs = Splayset.listItems
-	               (setUnion [generateLiveness ins, killLiveness ins])
-	in
-          List.foldl
-	    (fn (r, u) => case Splaymap.peek (u, r) of
-	                    NONE => Splaymap.insert (u,r,1)
+      let
+        val uses = findUses instrs
+        val regs = Splayset.listItems
+                    (setUnion [generateLiveness ins, killLiveness ins])
+      in
+        List.foldl(fn (r, u) => case Splaymap.peek (u, r) of (* peek: u = map, r = key, returns val *)
+	                    NONE => Splaymap.insert (u,r,1) (*  *)
 	                  | SOME c => Splaymap.insert (u,r,c+1))
             uses regs
 	end

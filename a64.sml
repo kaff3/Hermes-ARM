@@ -128,6 +128,122 @@ struct
           (* Test if label or something else. Set comma accordingly  *)
           "\"" ^ opc ^ op1 ^ op2 ^ op3 ^ "\\n\\t\"\n"
         end
+  
+  (* Register allocator helper functions *)
+  fun setUnion [] = Splayset.empty Int.compare
+    | setUnion [s] = s
+    | setUnion (s :: ss) = Splayset.union (setUnion ss, s)
+
+  val emptyset = Splayset.empty Int.compare
+
+  fun setMinus xs ys = Splayset.difference (xs, ys)
+
+  fun list2set ll = Splayset.addList (Splayset.empty Int.compare, ll)
+
+  fun pairOrder ((x1,y1), (x2,y2)) =
+    if x1 < x2 orelse x1 = x2 andalso y1 < y2 then LESS
+    else if x1 = x2 andalso y1 = y2 then EQUAL
+    else GREATER
+
+  (* used for splaysets of pairs *)
+  fun setUnion2 [] = Splayset.empty pairOrder
+    | setUnion2 [s] = s
+    | setUnion2 (s :: ss) =
+       Splayset.union (setUnion2 ss, s)
+
+  (* reference to list of spilled data *)      
+  val spilled = ref []
+
+  fun regsRead operand =
+    case operand of
+      Register r => [r]
+    | RegisterW r => [r]
+    | ImmOffset (r, _) => [r]
+    | RegAddr r => [r]
+    | BaseOffset (r1, r2) => [r1, r2]
+    | _ => []
+
+  fun regsWritten operand =
+    case operand of 
+      Register r => [r]
+    | _ => []
+
+  (* regs read by i, so live at start of i *)
+  fun generateLiveness instr =
+    let 
+      val (opc, op1, op2, op3) = instr
+    in 
+      case opc of
+        (* STR only op that reads from op1*)
+        STR => list2set(regsRead op1 @ regsRead op2)
+        (* others can be generalized to read from op2 and op3 *)
+      | _ =>  list2set(regsRead op2 @ regsRead op3)
+    end
+  
+  fun killLiveness instr =
+    let
+      val (opc, dest, _, _) = instr
+    in
+      case opc of
+        STR => emptyset
+      | _ => list2set(regsWritten dest)
+    end
+
+  (* registers live at exit from instructions *)
+  fun liveness instrs gen kill =
+    let val (liveOut, _) = liveness1 instrs gen kill
+    in 
+      liveOut
+    end
+  
+  (* Liveness analysis, determine out and in set*)
+  (* simple one pass because of PE *)
+  (* JMPS for error conditions? *)
+  fun liveness1 instrs gen kill =
+    case (instrs, gen, kill) of
+      ((opc, _, _, _) :: ins, g :: gs, k :: ks) =>
+        let 
+          val (live1, liveOut) = liveness1 ins gs ks
+          val liveIn = setUnion [setMinus liveOut k, g]
+        in 
+          (liveOut :: live1, liveIn)
+        end
+      | _ => ([], emptyset)
+
+  (* find pairs of interfering registers *)
+  (* follows Torbens structure, but could make it tail recursive? *)
+  fun interfere instrs liveOut kill =
+    case (instrs, live, kill) of
+      ((opc, _, _, _) :: ins, lOut :: ls, k :: ks) =>
+        setUnion2[interfere ins ls ks]
 
 
+    | _ => list2set []
+
+
+  fun findUses [] = Splaymap.mkDict Int.compare
+    | findUses (inst :: instrs) =
+      let
+        val uses = findUses instrs
+        val regs = Splayset.listItems
+                    (setUnion [generateLiveness inst, killLiveness inst])
+      in
+        List.foldl(fn (r, u) => case Splaymap.peek (u, r) of (* peek: u = map, r = key, returns val *)
+	                    NONE => Splaymap.insert (u,r,1) (*  *)
+	                  | SOME c => Splaymap.insert (u,r,c+1))
+            uses regs
+	end
+        
+  fun registerAllocate instrs = 
+    let 
+      val _ = spilled := []
+      val uses = findUses instrs
+      val gen = List.map generateLiveness instrs (* liveness generation *)
+      val kill = List.map killLiveness instrs   (* liveness killed *)
+      val liveOut = liveness instrs gen kill       (* propagation *)
+      val interference0 = interfere instrs liveOut kill
+      val interference = Splayset.listItems interference0
+    in
+
+    end
 end
