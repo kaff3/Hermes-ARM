@@ -94,33 +94,60 @@ struct
       | _ => [(a64.LABEL ("compilExp:" ^ Hermes.showExp exp true), 
               a64.NoOperand, a64.NoOperand, a64.NoOperand)]
 
-  (* fun compileDecs [] env = ([], env)
-    | compileDecs (Hermes.ConstDecl (_,_,pos) :: dl) env =
-      raise Error ("constants should have been eleminated by PE", pos)
-    | compileDecs (Hermes.VarDecl (s, (_, it), pos) :: dl) env =
-      let 
-        val r1 = a64.newRegister ()
-        val envNew = (s, (it, r1)) :: env
-        val (code1, envNew2) = compileDecs dl envNew
+  (*  *)
+  fun compileDecs [] env = ([], [], env)
+    | compileDecs (Hermes.ConstDecl (_,_,pos) :: ds) env =
+      raise HermesCx64.Error ("Constants should have been eliminated by PE", pos)
+    | compileDecs (Hermes.VarDecl (x, (_, it), pos) :: ds) env =
+      let
+        val r = a64.newRegister ()
+        val env1 = (x, (it, r)) :: env
+        val (alloc, dealloc, env2) = compileDecs ds env1
       in
-        (* XOR because variables are initialized to 0? *)
         (
-          [(a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)] @ code1,
-          envNew2
+          [(a64.EOR, a64.Register r, a64.Register r, a64.Register r)] @ alloc,
+          dealloc,
+          env2
         )
-    | compileDecs (Hermes.ArrayDecl (s, (_, it), exp, pos)) env =
-      (case exp of
-        Hermes.Const (n, p1) =>
-          let 
-            val r1 = a64.newRegister ()
-            val envNew = (s, (it, r1)) :: env
-            val 
-            (*
-            add vReg, vReg, r1
-            str reg0 vReg
-            *)
-      
-      ) *)
+      end 
+    | compileDecs (Hermes.ArrayDecl (x, (_, it), exp, pos) :: ds) env =
+      case exp of
+        Hermes.Const(n, p1) =>
+        let
+          val r = a64.newRegister ()
+          val env1 = (x, (it, r)) :: env
+          val (alloc, dealloc, env2) = compileDecs ds env1
+          (* Find out which STR opcode to use *)
+          val (strOpcode, regSize, immSize) = 
+            (case it of
+              Hermes.U8    => (a64.STRB, a64.RegisterW, "1")
+              | Hermes.U16 => (a64.STRH, a64.RegisterW, "2")
+              | Hermes.U32 => (a64.STR, a64.RegisterW,  "4")
+              | Hermes.U64 => (a64.STR, a64.Register,   "8")
+            )
+          val tmpReg = a64.newRegister ()
+          val setupCode = [(a64.MOV, a64.Register tmpReg, a64.Register r, a64.NoOperand)]
+          val clearCode =
+            List.tabulate (HermesCx64.fromNumString n,
+              fn i => (strOpcode, regSize a64.zr, a64.APost(tmpReg, immSize), a64.NoOperand))
+          val arraySize = HermesCx64.fromNumString immSize * HermesCx64.fromNumString n 
+          (* TODO: sub amount fits within imm optimization? *)
+          val subReg = a64.newRegister ()
+          val subCode = 
+            [(a64.LDR, a64.Register subReg, a64.PoolLit (Int.toString arraySize), a64.NoOperand)]
+
+          (*stack pointer restore*)
+          val restoreCode = [(a64.ADD, a64.SP, a64.SP, a64.Register subReg)]
+        in
+          (
+            subCode @ [(a64.SUB, a64.SP, a64.SP, a64.Register subReg),
+              (a64.MOV, a64.Register r, a64.SP, a64.NoOperand)]
+              @ clearCode @ alloc,
+              dealloc @ restoreCode,
+              env
+          )
+        end
+      | _ => raise HermesCx64.Error ("Array size should be constant after PR", pos)
   
 
   fun compileStat stat env =
@@ -172,7 +199,7 @@ struct
                 case t of
                   Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 0)
                   | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 1)
-                  | Hermes.U32 => (a64.LDRW, a64.STRW, a64.RegisterW, 2)
+                  | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW, 2)
                   | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  3)
               val load = 
                 [(a64.LSL, a64.Register iReg, a64.Register iReg, a64.Imm off),
@@ -198,8 +225,13 @@ struct
           | Hermes.UnsafeArray(s, i, p) =>
               compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env       
         end
-      (* | Hermes.Block (dl, sl, pos) =>
-        compileDecs skal laves først *)
+      | Hermes.Block (dl, ss, pos) =>
+        let
+          val (code1, code2, env1) = compileDecs dl env
+          val ssCode = List.map (fn s => compileStat s env1) ss
+        in
+          code1 @ List.concat ssCode @ code2
+        end
       | _ => (* Should never happen only for debugging *)
         [(a64.LABEL ("compilStat: " ^ debugStat stat), 
           a64.NoOperand, a64.NoOperand, a64.NoOperand)]

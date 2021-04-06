@@ -108,10 +108,10 @@ struct
     | showOpcode STRB = "STRB "
     | showOpcode LDRH = "LDRH "
     | showOpcode STRH = "STRH "
-    | showOpcode LDRW = "LDRW "
-    | showOpcode STRW = "STRW "
     | showOpcode MOV = "MOV "
     | showOpcode (LABEL s) = s
+    | showOpcode ADD = "ADD "
+    | showOpcode SUB = "SUB "
     | showOpcode _ = "missing case in showOpcode"
 
   fun printInstruction (opc, op1, op2 ,op3) =
