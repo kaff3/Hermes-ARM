@@ -73,7 +73,6 @@ struct
     | debugStat (Hermes.Block(_,_,_))       = "Block"
     | debugStat (Hermes.Assert(_,_))        = "Assert" 
 
-
   (*
       Functions used for compiling
   *)
@@ -89,10 +88,16 @@ struct
     case exp of
       Hermes.Const(n, _) =>
         (* LDR Rn, =0x87654321 *)
+<<<<<<< Updated upstream
         [(a64.LDR, a64.Register target, a64.PoolLit n, a64.NoOperand)]
   
       | (Hermes.Rval lval )=>
         (case lval of
+=======
+          [(a64.LDR, target, a64.PoolLit n, a64.NoOperand)]
+      (* | (Hermes.Rval lval )=>
+        case lval of
+>>>>>>> Stashed changes
           (Hermes.Var (s, p)) =>
             let
               val (t, vReg) = lookup s env p
@@ -285,7 +290,7 @@ struct
         in
         case lval of
           Hermes.Var(n, p) =>
-            let 
+            let
               val (t, vReg) = lookup n env p  
               (* val size = HermesCx64.hSize t *)
               val (setup, maskDown) = 
@@ -426,10 +431,14 @@ struct
             (a64.STR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.STR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.STR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
-            (a64.STR, a64.SP, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand), (* save SP on stack*)
-            (a64.STR, a64.Register 31, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand), (* error code *)
-            (a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] (*placeholder, LEA in x86*)
-      
+            (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
+            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand), (* save SP on stack*)
+            
+            (* error code *)
+            (a64.MOV, a64.Register 9, a64.Imm 0, a64.NoOperand),
+            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
+            
+            (* ,(a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] (* placeholder, LEA in x86 *) *)
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
@@ -445,20 +454,22 @@ struct
             (a64.LDR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.LDR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.LDR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
-            (a64.LDR, a64.SP, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand)]
+            (a64.LDR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
+            (a64.MOV, a64.SP, a64.Register 9, a64.NoOperand)]
           (* val epilogue3 = [("xor", 3, x86.Register 10, x86.Register 10),
               ("xor", 3, x86.Register 11, x86.Register 11)] Zero caller-saves registers not used for parameters *)
+      (* val allCode =
+            prologue1 @ saveCallee  @ bodyCode  @
+      epilogue0 @ epilogue1 @ restoreCallee @ epilogue3 *)
       val allCode =
             prologue1 @ saveCallee  @ bodyCode  @
-      epilogue0 @ epilogue1 @ restoreCallee (*@ epilogue3*)
-      (* val (newCode, offset) = x86.registerAllocate allCode *)
+      epilogue0 @ epilogue1 @ restoreCallee 
+      val (newCode, offset) = a64.registerAllocate allCode
       (* val newCode1 = replace999 newCode (signedToString offset) *)
     in
       "int " ^ f ^ "(" ^ arglist ^ ")\n" ^
       "{\n  asm volatile ( \n" ^
-      String.concat (List.map a64.printInstruction allCode) ^
+      String.concat (List.map a64.printInstruction newCode) ^
       "  );\n}\n\n"
     end 
-
-
 end

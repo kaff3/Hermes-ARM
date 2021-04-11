@@ -174,15 +174,15 @@ struct
 	           writeRegs source2 @ readRegs source2)
     | (opc, z, sourceDest, NoOperand) =>
          if String.isPrefix "set" opc
-	 then list2set (readRegs sourceDest)
-	 else list2set (writeRegs sourceDest @ readRegs sourceDest)
+        then list2set (readRegs sourceDest)
+        else list2set (writeRegs sourceDest @ readRegs sourceDest)
     | (opc, z, source, dest) =>
          if opc = "xor" andalso source = dest
-	 then emptyset (* resets register, so dead before *)
-	 else if String.isPrefix "mov" opc
-	 then  list2set (writeRegs source @ readRegs source @ readRegs dest)
-         else list2set (writeRegs source @ readRegs source @
-	                writeRegs dest @ readRegs dest)
+        then emptyset (* resets register, so dead before *)
+        else if String.isPrefix "mov" opc
+        then  list2set (writeRegs source @ readRegs source @ readRegs dest)
+              else list2set (writeRegs source @ readRegs source @
+                        writeRegs dest @ readRegs dest)
 
   (* registers written by instruction *)
   fun killLiveness instr =
@@ -222,6 +222,7 @@ struct
       | _ => ([], emptyset, (fn l => raise Error ("label " ^ l ^ " not found\n")))
 
   (* finds pairs of interfering registers *)
+  (* reg x interferes with y if x in kill[i] and y in out[i] for inst i *)
   fun interfere instrs live kill =
     case (instrs, live, kill) of
       ((opc, _, Register y, Register x) :: ins, lOut :: ls, k :: ks) =>
@@ -237,7 +238,7 @@ struct
 	          (fn x =>List.concat (List.map (fn y => [(x,y), (y,x)])
 	                 (Splayset.listItems (setMinus lOut (list2set [x])))))
 	                  (Splayset.listItems k)))]
-    | _ => list2set2 []
+      | _ => list2set2 []
 
   (* finds register-to-register moves *)
   fun getMoves instr =
@@ -330,11 +331,11 @@ struct
 
   fun pairs2map [] = []
     | pairs2map ((x,y)::pairs) =
-        let
-	  val (ys, pairs2) = extractX x pairs
-	in
-	  (x,y::ys) :: pairs2map pairs2
-	end
+      let
+	      val (ys, pairs2) = extractX x pairs
+	    in
+	      (x,y::ys) :: pairs2map pairs2
+	    end
 	
   (* colour graph, giving a mapping of pseudoRegs to regs *)
   (* prefer register to which a pseudoReg is move-related *)
@@ -473,7 +474,7 @@ struct
           val newInstrs = List.map (reColour mapping) instrs
           val withoutSelf = List.filter notSelfMove newInstrs
         in
-          (withoutSelf, !spillOffset - 16)
+          (newInstrs, !spillOffset - 16)
         end
       else
         registerAllocate (spillList (!spilled) instrs)

@@ -101,7 +101,7 @@ struct
         "W" ^ regNum
       end
     | showOperand (Imm i) = "#" ^ (Int.toString i)
-    | showOperand (PoolLit n) = "=0x" ^ n
+    | showOperand (PoolLit n) = "=" ^ n
     | showOperand (ABaseOffI (r, off)) =
       (*TODO: immediate size check?*)
       let
@@ -178,10 +178,19 @@ struct
     else GREATER
 
   (* used for splaysets of pairs *)
-  fun setUnion2 [] = Splayset.empty pairOrder
-    | setUnion2 [s] = s
-    | setUnion2 (s :: ss) =
-       Splayset.union (setUnion2 ss, s)
+  fun setUnionP [] = Splayset.empty pairOrder
+    | setUnionP [s] = s
+    | setUnionP (s :: ss) =
+       Splayset.union (setUnionP ss, s)
+
+  fun list2setP ll = Splayset.addList (Splayset.empty pairOrder, ll)
+
+  (* register-to-register moves *)
+  (* TILFØJ FOR REGISTERW!!! *)
+  fun getMoves instr =
+    case instr of
+      (MOV, Register x, Register y, _) => list2setP [(x,y), (y,x)]
+    | _ => list2setP []
 
   (* reference to list of spilled data *)      
   val spilled = ref []
@@ -190,14 +199,17 @@ struct
     case operand of
       Register r => [r]
     | RegisterW r => [r]
-    | ImmOffset (r, _) => [r]
-    | RegAddr r => [r]
-    | BaseOffset (r1, r2) => [r1, r2]
+    | ABase r => [r]
+    | ABaseOffI (r, _) => [r]
+    | ABaseOffR (r1, r2) => [r1, r2]
+    | APre (r, _) => [r]
+    | APost (r, _) => [r]
     | _ => []
 
   fun regsWritten operand =
     case operand of 
       Register r => [r]
+    | RegisterW r => [r]
     | _ => []
 
   (* regs read by i, so live at start of i *)
@@ -208,26 +220,24 @@ struct
       case opc of
         (* STR only op that reads from op1*)
         STR => list2set(regsRead op1 @ regsRead op2)
+        | STRB => list2set(regsRead op1 @ regsRead op2)
+        | STRH => list2set(regsRead op1 @ regsRead op2)
         (* others can be generalized to read from op2 and op3 *)
       | _ =>  list2set(regsRead op2 @ regsRead op3)
     end
   
+  (* regs written to by i, so live at end of i *)
   fun killLiveness instr =
     let
       val (opc, dest, _, _) = instr
     in
       case opc of
         STR => emptyset
+        | STRB => emptyset
+        | STRH => emptyset
       | _ => list2set(regsWritten dest)
     end
 
-  (* registers live at exit from instructions *)
-  fun liveness instrs gen kill =
-    let val (liveOut, _) = liveness1 instrs gen kill
-    in 
-      liveOut
-    end
-  
   (* Liveness analysis, determine out and in set*)
   (* simple one pass because of PE *)
   (* JMPS for error conditions? *)
@@ -242,15 +252,197 @@ struct
         end
       | _ => ([], emptyset)
 
+  (* registers live at exit from instructions *)
+  fun liveness instrs gen kill =
+    let val (liveOut, _) = liveness1 instrs gen kill
+    in 
+      liveOut
+    end
+  
   (* find pairs of interfering registers *)
-  (* follows Torbens structure, but could make it tail recursive? *)
+  (* VI SKAL OGSÅ TJEKKE FOR REGISTERW det bliver bare grimt *)
+  (* reg x interferes with y if x in kill[i] and y in out[i] for inst i *)
+
   fun interfere instrs liveOut kill =
-    case (instrs, live, kill) of
-      ((opc, _, _, _) :: ins, lOut :: ls, k :: ks) =>
-        setUnion2[interfere ins ls ks]
+    case (instrs, liveOut, kill) of
+      ((MOV, Register x, Register y, _) :: ins, lOut :: ls, k :: ks) =>
+        setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
+          (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]      
+      
+      | (_ :: ins, lOut :: ls, k :: ks) =>
+        setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
+            (fn x => List.concat (List.map (fn y => [(x, y), (x,x)]) 
+                    (Splayset.listItems (setMinus lOut (list2set [x])))))
+                    (Splayset.listItems k)))]
+      | _ => list2setP []
+
+  (* find node with fewest neighbours *)
+  fun fewestNeighbours [] (x,ys) = (x,ys)
+    | fewestNeighbours ((x1,ys1) :: neighbours) (x,ys) =
+        if List.length ys1 < List.length ys
+	then fewestNeighbours neighbours (x1,ys1)
+	else fewestNeighbours neighbours (x,ys)
+
+  (* registers that can be allocated -- NOT FP (29)*)
+  (* maybe not r16-r18 and r30 *)
+  (* https://wiki.cdot.senecacollege.ca/wiki/AArch64_Register_and_Instruction_Quick_Start *)
+  (* remember to also change in other places then *)
+
+  (* remove node from graph *)
+  fun remove x [] = []
+    | remove x ((x1,ys) :: neighbours) =
+         if x=x1 then remove x neighbours
+	 else (x1, List.filter (fn y => y<>x) ys) :: remove x neighbours
+
+  fun extractX x [] = ([], [])
+    | extractX x ((x1,y1) :: pairs) =
+      if x<>x1 then ([], (x1,y1) :: pairs)
+      else
+        let
+          val (ys, pairs2) = extractX x pairs
+        in
+          (y1::ys, pairs2)
+        end
+
+  fun pairs2map [] = []
+    | pairs2map ((x,y)::pairs) =
+      let
+	      val (ys, pairs2) = extractX x pairs
+	    in
+	      (x,y::ys) :: pairs2map pairs2
+	    end
 
 
-    | _ => list2set []
+  val allocatable = list2set (argRegs @ [8,9,10,11,12,13,14,15] @ calleeSaves)
+
+  (* select step of graph colouring *)
+  fun select [] moves mapping = mapping
+    | select ((x,ys) :: stack) moves mapping =
+      let
+        val ys1 = list2set (List.map mapping ys)
+        val freeRegs =
+              Splayset.listItems (setMinus allocatable ys1) (* minus registers used by neighbours *)
+        val moveRelated = List.filter
+            (fn y => List.exists (fn (x1,y1) => (x1,mapping y1) = (x,y)) moves)freeRegs
+        val selected =
+          case (moveRelated, freeRegs) of
+            (y :: ys, _) => y
+          | ([], y :: ys) => y
+          | ([], []) => (spilled := x :: !spilled; x)
+      in
+	      select stack moves (fn y => if x=y then selected else mapping y)
+	    end
+
+  (* find best spill candidate *)
+  fun bestSpill [] uses (x,ys,score) = (x,ys)
+    | bestSpill ((x1,ys1) :: neighbours) uses (x,ys,score) =
+         let
+	   val usesOfx = Splaymap.find (uses,x)
+	   val score1 = (10000 * List.length ys1) div (usesOfx + 1)
+	                (* many neighbours and few uses is better *)
+	 in
+	   if score1 > score
+	   then bestSpill neighbours uses (x1,ys1,score1)
+	   else bestSpill neighbours uses (x,ys,score)
+	 end
+
+  fun simplify [] stack moves uses = select stack moves (fn x => x)
+    | simplify ((x,ys) :: neighbours) stack moves uses =
+      let
+        val (x1, ys1) = fewestNeighbours neighbours (x,ys) (* ys = neighbours *)
+        val (x2, ys2) = 
+              if List.length ys1 < 26 then (x1, ys1) (* colourable , see allocatable *)
+              else bestSpill ((x,ys) :: neighbours) uses (x,ys,~1) (* find spill candidate *)
+        val neighbours1 = remove x2 ((x,ys) :: neighbours)
+	    in
+            simplify neighbours1 ((x2,ys2) :: stack) moves uses
+	    end
+
+  fun colourGraph interference moves uses =
+    let
+      (* finds all pseudoregisters a given pseudoreg interferes with *)
+      val interferesWith =
+            List.filter (fn (x,ys) => x > 31) (pairs2map interference)
+    in
+      simplify interferesWith [] moves uses
+    end
+
+  (* map pseudo registers to new registers *)
+  fun reColour mapping (opc, op1, op2, op3) =
+    (opc, reColourOp mapping op1, reColourOp mapping op2,  reColourOp mapping op3)
+
+  and reColourOp mapping oper =
+    case oper of
+      Register r => Register (mapping r)
+    | RegisterW r => RegisterW (mapping r)
+    | Imm x => Imm x
+    | PoolLit x => PoolLit x 
+    | ABase r => ABase (mapping r)
+    | ABaseOffR (r1, r2) => ABaseOffR (mapping r1, mapping r2)
+    | ABaseOffI (r, x) => ABaseOffI (mapping r, x)
+    | APre (r, x) => APre (mapping r, x)
+    | APost (r, x) => APost (mapping r, x)
+    | SP => SP
+    | NoOperand => NoOperand
+
+  (* add support for RegisterW!!! *)
+  fun notSelfMove (MOV, Register x, Register y, _) = x<>y
+    | notSelfMove _ = true
+
+  val spillOffset = ref (~110)
+  
+  (* FOR SPILLED VARIABLES *)
+  (* fun replaceRegOp x x1 ope =
+    case ope of
+      Register y => if x=y then Register x1 else ope
+    | Constant c => ope
+    | Indirect y => if x=y then Indirect x1 else ope
+    | Offset (y,c) => if x=y then Offset (x1,c) else ope
+    | ROffset (y,z) =>
+        ROffset (if x=y then x1 else y, if x=z then x1 else z)
+    | Scaled (y,z,c) =>
+        Scaled (if x=y then x1 else y, if x=z then x1 else z, c)
+    | NoOperand => ope
+
+  fun replaceReg x x1 (opc, z, op1, op2) =
+    (opc, z, replaceRegOp x x1 op1, replaceRegOp x x1 op2) *)
+
+
+  (* fun spill x offset [] = []
+    | spill x offset (instr :: instrs) =
+         let
+	   val reads = generateLiveness instr
+	   val writes = killLiveness instr
+	   val instrs1 = spill x offset instrs
+	   val x1 = newRegister ()
+	 in
+	   case (Splayset.member (reads, x), Splayset.member (writes, x)) of
+	     (false, false) => instr :: instrs1
+	   | (true, false) =>
+	       ("mov", 3, Offset (rbp, offset), Register x1)
+	       :: (replaceReg x x1 instr)
+	       :: instrs1
+	   | (false, true) =>
+	       (replaceReg x x1 instr)
+	       :: ("mov", 3, Register x1, Offset (rbp, offset))
+	       :: instrs1
+	   | (true, true) =>
+	       ("mov", 3, Offset (rbp, offset), Register x1)
+	       :: (replaceReg x x1 instr)
+	       :: ("mov", 3, Register x1, Offset (rbp, offset))
+	       :: instrs1
+	 end *)
+
+  (* fun spillList [] instrs = instrs
+    | spillList (x :: xs) instrs =
+      let
+        val _ = TextIO.output
+                 (TextIO.stdErr, "spill register " ^ Int.toString x ^ "\n")
+        val offset = signedToString (spillOffset := !spillOffset - 8; !spillOffset)
+        val instrs1 = spill x offset instrs
+	    in
+	      spillList xs instrs1
+	    end *)
 
 
   fun findUses [] = Splaymap.mkDict Int.compare
@@ -260,22 +452,55 @@ struct
         val regs = Splayset.listItems
                     (setUnion [generateLiveness inst, killLiveness inst])
       in
-        List.foldl(fn (r, u) => case Splaymap.peek (u, r) of (* peek: u = map, r = key, returns val *)
-	                    NONE => Splaymap.insert (u,r,1) (*  *)
+        List.foldl(fn (r, u) => case Splaymap.peek (u, r) of 
+	                    NONE => Splaymap.insert (u,r,1) 
 	                  | SOME c => Splaymap.insert (u,r,c+1))
             uses regs
 	end
         
+  fun printGraph interference =
+    List.app
+      (fn (x,y) => TextIO.output
+                 (TextIO.stdErr,
+                  Int.toString x ^"/"^ Int.toString y ^"\n"))
+     interference
+
+  fun printMapping mapping =
+    List.app
+      (fn i => if i <> mapping i then
+                 TextIO.output
+                   (TextIO.stdErr,
+                    Int.toString i ^","^ Int.toString (mapping i) ^"\n")
+	       else ())
+      (List.tabulate (5000, fn i => i))
+
+
   fun registerAllocate instrs = 
     let 
-      val _ = spilled := []
-      val uses = findUses instrs
-      val gen = List.map generateLiveness instrs (* liveness generation *)
-      val kill = List.map killLiveness instrs   (* liveness killed *)
-      val liveOut = liveness instrs gen kill       (* propagation *)
-      val interference0 = interfere instrs liveOut kill
+      val _ = spilled := [] 
+      val uses = findUses instrs                    (* *)
+      val gen = List.map generateLiveness instrs    (* liveness generation *)
+      val kill = List.map killLiveness instrs       (* liveness killed *)
+      val liveOut = liveness instrs gen kill        (* propagation *)
+      val interference0 = interfere instrs liveOut kill (* interference: pair of overlapping *)
       val interference = Splayset.listItems interference0
+      val moves = Splayset.listItems (setUnionP (List.map getMoves instrs)) (* find move instructions *)
+      val mapping = colourGraph interference moves uses
+      val _ = TextIO.output(TextIO.stdErr, "INTERFERENCE: \n") 
+      val _ = printGraph interference
+      val _ = TextIO.output(TextIO.stdErr, "MAPPING: \n") 
+      val _ = printMapping mapping
     in
-
+      if null (!spilled) then
+        let
+          val newInstrs = List.map (reColour mapping) instrs
+          (* val withoutSelf = List.filter notSelfMove newInstrs *)
+        in
+          (newInstrs, !spillOffset - 16)
+        end
+      else
+      (* if we have spilled variables, do register allokation again *)
+        (* registerAllocate (spillList (!spilled) instrs) *)
+        registerAllocate instrs
     end
 end
