@@ -37,6 +37,17 @@ struct
     (regCounter := !regCounter + 1;
      !regCounter)
 
+  (* datatype ext 
+    = UXTW
+    | UXTX
+    | NoExt *)
+
+  datatype cond
+    = EQ | NE
+    | HI  (* x > y  *)
+    | LS  (* x <= y *)
+    | NoCond
+
   datatype operand
     = Register  of int          (*64 bit*)
     | RegisterW of int          (*32 bit*)
@@ -45,31 +56,37 @@ struct
     | PoolLit   of string          (* Pool Literal *)
     
     (* Addressing modes *)
-    | ABase     of int          (* [base] *)
-    | ABaseOffR of int * int    (* [base, Rm] *)
+    | ABase     of int             (* [base] *)
+    | ABaseOffR of int * int       (* [base, Rm] *)
     | ABaseOffI of int * string    (* [base, #imm] *)
     | APre      of int * string    (* [base, #imm]! *)
     | APost     of int * string    (* [base], #imm *)
 
     (* Specials *)
+    | Cond of cond
+    | Label_ of string
     | SP 
     | NoOperand
 
-  datatype opcode 
-    = LDR | STR
+  datatype opcode
+    (* memory *) 
+    = LDR  | STR
     | LDRB | STRB     (* <--                             *)
     | LDRH | STRH     (* <-- Remember to use W registers!*)
-    | LDRW | STRW     (* <--                             *)
-    | LABEL of string (*not an actual opcode*)
+    (* arithmic *)
+    | ADD | SUB
+    | MUL
+    (* logic *)
     | ROR
     | EOR
-    | ADD | SUB
-    | LSL
-    | ORR
-    | MOV
-    | AND
+    | LSL | LSR
+    | ORR | AND
+    | MOV | MVN
     | RBIT
-    | MUL
+    | CMP
+    | CSETM
+    | B of cond
+    | LABEL of string (*not an actual opcode*)
 
   type inst = opcode * operand * operand * operand 
 
@@ -83,7 +100,7 @@ struct
       let val regNum = Int.toString r in
         "W" ^ regNum
       end
-    (* | showOperand Constant (s) = *)
+    | showOperand (Imm i) = "#" ^ (Int.toString i)
     | showOperand (PoolLit n) = "=0x" ^ n
     | showOperand (ABaseOffI (r, off)) =
       (*TODO: immediate size check?*)
@@ -98,6 +115,12 @@ struct
       in
         "[X" ^ regNum ^ "]"
       end
+    | showOperand (APost (r, i)) =
+      let
+        val regNum = Int.toString r
+      in
+        "[X" ^ regNum ^ "], #" ^ i
+      end
     | showOperand SP = "SP"
     | showOperand NoOperand = ""
     | showOperand _ = "missing case in showOperand"
@@ -108,10 +131,19 @@ struct
     | showOpcode STRB = "STRB "
     | showOpcode LDRH = "LDRH "
     | showOpcode STRH = "STRH "
-    | showOpcode MOV = "MOV "
-    | showOpcode (LABEL s) = s
+    
     | showOpcode ADD = "ADD "
     | showOpcode SUB = "SUB "
+    | showOpcode MUL = "MUL "
+
+    | showOpcode ROR = "ROR "
+    | showOpcode EOR = "EOR "
+    | showOpcode LSL = "LSL "
+    | showOpcode ORR = "ORR "
+    | showOpcode MOV = "MOV "
+    | showOpcode AND = "AND "
+    | showOpcode RBIT = "RBIT "
+    | showOpcode (LABEL s) = s
     | showOpcode _ = "missing case in showOpcode"
 
   fun printInstruction (opc, op1, op2 ,op3) =

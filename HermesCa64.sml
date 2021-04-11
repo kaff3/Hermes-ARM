@@ -11,10 +11,29 @@ struct
     | translateUop Hermes.RoL = a64.ROR (*Take care!!!*)
     | translateUop Hermes.RoR = a64.ROR
     | translateUop Hermes.XorWith = a64.EOR
+  
+  fun translateBop Hermes.Plus  pos = a64.ADD
+    | translateBop Hermes.Minus pos = a64.SUB
+    | translateBop Hermes.Times pos = a64.MUL
+    (* | translateBop Hermes.Divide = a64.DIV *)
+    (* | translateBop Hermes.Modulo = ????? *)
+    | translateBop Hermes.Xor    pos = a64.EOR
+    | translateBop Hermes.BAnd   pos = a64.AND
+    | translateBop Hermes.BOr    pos = a64.ORR
+    | translateBop Hermes.ShiftL pos = a64.LSL
+    | translateBop Hermes.ShiftR pos = a64.LSR
+    | translateBop _ pos = raise HermesCx64.Error("Binop not implemented", pos)
+    
 
   (*
       Helper Functions
   *)
+
+  fun isComparison bop =
+    List.exists (fn cmp => cmp = bop)
+      [Hermes.Equal, Hermes.Less, Hermes.Greater, 
+       Hermes.Neq, Hermes.Leq, Hermes.Geq]
+
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
     let 
@@ -59,12 +78,6 @@ struct
       Functions used for compiling
   *)
 
-  (* fun declareArgs [] = "\n"
-  | declareArgs (Hermes.VarArg (x, (_, it), _) :: args) =
-      "  " ^ cType it ^ "arg_" ^ x ^ ";\n" ^ declareArgs args
-  | declareArgs (Hermes.ArrayArg (x, (_, it), _) :: args) =
-      "  " ^  cType it ^ "*arg_" ^ x ^ ";\n" ^ declareArgs args *)
-
   (* lookup in environment *)
   fun lookup x [] pos =
         raise HermesCx64.Error ("undeclared identifier: " ^ x, pos)
@@ -76,21 +89,132 @@ struct
     case exp of
       Hermes.Const(n, _) =>
         (* LDR Rn, =0x87654321 *)
-        [(a64.LDR, target, a64.PoolLit n, a64.NoOperand)]
-      (* | (Hermes.Rval lval )=>
-        case lval of
+        [(a64.LDR, a64.Register target, a64.PoolLit n, a64.NoOperand)]
+  
+      | (Hermes.Rval lval )=>
+        (case lval of
           (Hermes.Var (s, p)) =>
             let
               val (t, vReg) = lookup s env p
             in
-              [(a64.MOV, target, vReg, a64.NoOperand)]
+              [(a64.MOV, a64.Register target, a64.Register vReg, a64.NoOperand)]
             end
-          (* | (Hermes.Array (s, e, p)) =>
+          | (Hermes.Array (s, e, p)) =>
+            (*Value at index e should end up in target*)
             let
-              
+              val (t1, vReg) = lookup s env p
+              val eReg = a64.newRegister ()
+              val eCode = compileExp e eReg env pos
+              (* generate code to to load value *)
+              val (ldrOpcode, regSize, size) =
+                (case t1 of
+                  Hermes.U8    => (a64.LDRB, a64.RegisterW, "1")
+                  | Hermes.U16 => (a64.LDRH, a64.RegisterW, "2")
+                  | Hermes.U32 => (a64.LDR, a64.RegisterW,  "4")
+                  | Hermes.U64 => (a64.LDR, a64.Register,   "8")
+                )
+              (* find offset of element to load *)
+              (*
+                1. Load size of datatype into register sizeReg
+                2. Multiply sizeReg and eReg -> eReg
+                3. Can now use eReg as offset for load to target
+              *)
+              val sizeReg = a64.newRegister ()
+              val loadCode = [
+                (a64.LDR, a64.Register sizeReg, a64.PoolLit size, a64.NoOperand),      (*1*)
+                (a64.MUL, a64.Register eReg, a64.Register eReg, a64.Register sizeReg), (*2*)
+                (ldrOpcode, regSize target, a64.ABaseOffR(vReg, eReg), a64.NoOperand)  (*3*)
+              ]
             in
-            
-            end *) *)
+              eCode @ loadCode
+            end
+          | Hermes.UnsafeArray(x, e, p) => 
+            compileExp (Hermes.Rval (Hermes.Array(x,e,pos))) target env pos
+        )
+
+      | Hermes.Un (Hermes.Negate, e, p) =>
+        let
+          (*Always on 64-bit values? *)
+          val eCode = compileExp e target env p
+          val negCode = [(a64.MVN, a64.Register target, a64.Register target, a64.NoOperand)]
+        in
+          eCode @ negCode
+        end
+      
+      | Hermes.Bin (bop, e1, e2, p) =>
+        let
+          val e2Reg = a64.newRegister ()
+          val e1Code = compileExp e1 target env p
+          val e2Code = compileExp e2 e2Reg env p
+          val opc = translateBop bop p
+
+          val bopCode = 
+            if isComparison bop then
+              let
+                val cond =
+                  case bop of 
+                      Hermes.Equal   => a64.EQ
+                    | Hermes.Less    => a64.LS
+                    | Hermes.Greater => a64.HI
+                    | Hermes.Neq     => a64.NE
+                    | Hermes.Leq     => a64.LS
+                    | Hermes.Geq     => a64.HI
+                val compCode = [
+                  (a64.CMP, a64.Register target, a64.Register e2Reg, a64.NoOperand),
+                  (a64.CSETM, a64.Register target, a64.Cond cond, a64.NoOperand)
+                ]
+                val tmpReg = a64.newRegister ()
+                val handleCode =
+                  if bop = Hermes.Less orelse bop = Hermes.Geq then
+                      [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand),
+                       (a64.AND, a64.Register target, a64.Register target, a64.Register tmpReg)]
+                  else
+                    []
+              in
+                compCode @ handleCode
+              end
+            else
+              [(opc, a64.Register target, a64.Register target, a64.Register e2Reg)]
+        in
+          e1Code @ e2Code @ bopCode
+        end
+
+      | Hermes.AllZero(x, exp, p) =>
+        (*TODO: Skal der matches på loc -> hvor arrayet ligger?*)
+        (*TODO: mangler vel at verify længden af arrayet*)
+        case exp of
+          Hermes.Const (n, p1)=>
+            let
+              val (t, vReg) = lookup x env p1
+              (* find byte size *)
+              val (ldrOpcode, regSize, immSize) =
+                case t of
+                  Hermes.U8  => (a64.LDRB, a64.RegisterW, "1")
+                | Hermes.U16 => (a64.LDRH, a64.RegisterW, "2")
+                | Hermes.U32 => (a64.LDR,  a64.RegisterW, "4")
+                | Hermes.U64 => (a64.LDR,  a64.Register,  "8")
+              
+              val tmpReg  = a64.newRegister ()
+              val iReg    = a64.newRegister ()
+              val orReg   = a64.newRegister ()
+
+              val initCode = [
+                (a64.LDR, a64.Register orReg, a64.PoolLit "0", a64.NoOperand)]
+              val orCode =
+                List.tabulate (HermesCx64.fromNumString n,
+                  fn i => [
+                    (ldrOpcode, regSize tmpReg, a64.APost(iReg, immSize), a64.NoOperand),
+                    (a64.ORR, regSize orReg, regSize orReg, regSize tmpReg)
+                  ])
+              val testCode = [
+                (a64.CMP, regSize orReg, a64.Imm 0, a64.NoOperand),
+                (a64.CSETM, a64.Register target, a64.Cond a64.EQ, a64.NoOperand)
+              ]
+            in
+              initCode @ List.concat orCode @ testCode
+            end
+          | _ => raise HermesCx64.Error("Array size should be costant after PE", p)
+
       | _ => [(a64.LABEL ("compilExp:" ^ Hermes.showExp exp true), 
               a64.NoOperand, a64.NoOperand, a64.NoOperand)]
 
@@ -142,7 +266,7 @@ struct
           (
             subCode @ [(a64.SUB, a64.SP, a64.SP, a64.Register subReg),
               (a64.MOV, a64.Register r, a64.SP, a64.NoOperand)]
-              @ clearCode @ alloc,
+              @ setupCode @ clearCode @ alloc,
               dealloc @ restoreCode,
               env
           )
@@ -157,7 +281,7 @@ struct
         let
           val opc = translateUop uop
           val eReg = a64.newRegister ()
-          val eCode = compileExp e (a64.Register eReg) env pos
+          val eCode = compileExp e eReg env pos
         in
         case lval of
           Hermes.Var(n, p) =>
@@ -191,7 +315,7 @@ struct
             let
               val (t, vReg) = lookup s env p
               val iReg = a64.newRegister ()
-              val iCode = compileExp i (a64.Register iReg) env p
+              val iCode = compileExp i iReg env p
               val tmp = a64.newRegister ()
               val mulReg = a64.newRegister ()
               (* find ldr and store sizes *)
@@ -232,8 +356,23 @@ struct
         in
           code1 @ List.concat ssCode @ code2
         end
+      | Hermes.Assert (e, (l,p)) =>
+        let
+          val eReg = a64.newRegister ()
+          val eCode = compileExp e eReg env (l,p)
+          val label = HermesCx64.makeName "label" (l,p)
+        in
+          eCode @ [
+            (a64.CMP, a64.Register eReg, a64.Imm 0, a64.NoOperand),
+            (a64.B a64.NE, a64.Label_ label, a64.NoOperand, a64.NoOperand),
+            (a64.LDR, a64.Register eReg,
+              a64.PoolLit (HermesCx64.signedToString (10000*l+p)), a64.NoOperand),
+            (a64.STR, a64.Register eReg, a64.ABaseOffI(a64.fp, "-144"), a64.NoOperand),
+            (a64.LABEL label, a64.NoOperand, a64.NoOperand, a64.NoOperand)
+          ]
+        end
       | _ => (* Should never happen only for debugging *)
-        [(a64.LABEL ("compilStat: " ^ debugStat stat), 
+        [(a64.LABEL ("compileStat: " ^ debugStat stat), 
           a64.NoOperand, a64.NoOperand, a64.NoOperand)]
     )
 
