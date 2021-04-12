@@ -88,16 +88,10 @@ struct
     case exp of
       Hermes.Const(n, _) =>
         (* LDR Rn, =0x87654321 *)
-<<<<<<< Updated upstream
         [(a64.LDR, a64.Register target, a64.PoolLit n, a64.NoOperand)]
   
       | (Hermes.Rval lval )=>
         (case lval of
-=======
-          [(a64.LDR, target, a64.PoolLit n, a64.NoOperand)]
-      (* | (Hermes.Rval lval )=>
-        case lval of
->>>>>>> Stashed changes
           (Hermes.Var (s, p)) =>
             let
               val (t, vReg) = lookup s env p
