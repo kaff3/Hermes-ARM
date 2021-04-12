@@ -368,6 +368,7 @@ struct
             (a64.LDR, a64.Register eReg,
               a64.PoolLit (HermesCx64.signedToString (10000*l+p)), a64.NoOperand),
             (a64.STR, a64.Register eReg, a64.ABaseOffI(a64.fp, "-144"), a64.NoOperand),
+            (a64.B a64.NoCond, a64.Label_ "exit_label_", a64.NoOperand, a64.NoOperand),
             (a64.LABEL label, a64.NoOperand, a64.NoOperand, a64.NoOperand)
           ]
         end
