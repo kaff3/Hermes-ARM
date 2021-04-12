@@ -145,7 +145,6 @@ struct
           val e2Reg = a64.newRegister ()
           val e1Code = compileExp e1 target env p
           val e2Code = compileExp e2 e2Reg env p
-          val opc = translateBop bop p
 
           val bopCode = 
             if isComparison bop then
@@ -173,7 +172,7 @@ struct
                 compCode @ handleCode
               end
             else
-              [(opc, a64.Register target, a64.Register target, a64.Register e2Reg)]
+              [(translateBop bop p, a64.Register target, a64.Register target, a64.Register e2Reg)]
         in
           e1Code @ e2Code @ bopCode
         end
@@ -181,7 +180,7 @@ struct
       | Hermes.AllZero(x, exp, p) =>
         (*TODO: Skal der matches på loc -> hvor arrayet ligger?*)
         (*TODO: mangler vel at verify længden af arrayet*)
-        case exp of
+        (case exp of
           Hermes.Const (n, p1)=>
             let
               val (t, vReg) = lookup x env p1
@@ -213,6 +212,7 @@ struct
               initCode @ List.concat orCode @ testCode
             end
           | _ => raise HermesCx64.Error("Array size should be costant after PE", p)
+          )
 
       | _ => [(a64.LABEL ("compilExp:" ^ Hermes.showExp exp true), 
               a64.NoOperand, a64.NoOperand, a64.NoOperand)]
@@ -282,13 +282,13 @@ struct
           val eReg = a64.newRegister ()
           val eCode = compileExp e eReg env pos
         in
-        case lval of
+        (case lval of
           Hermes.Var(n, p) =>
             let
               val (t, vReg) = lookup n env p  
               (* val size = HermesCx64.hSize t *)
               val (setup, maskDown) = 
-                case uop of
+                (case uop of
                   Hermes.RoR => extendBits (a64.Register vReg) t
                   | Hermes.RoL => 
                     let
@@ -299,6 +299,7 @@ struct
                       (set @ rev, rev @ clean)
                     end
                   | _ => ([], [])
+                )
             in
               eCode @ setup @ 
               [(opc, a64.Register vReg, a64.Register vReg, (a64.Register eReg))] @ 
@@ -346,7 +347,8 @@ struct
               maskDown @ save
             end
           | Hermes.UnsafeArray(s, i, p) =>
-              compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env       
+              compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env
+        )   
         end
       | Hermes.Block (dl, ss, pos) =>
         let

@@ -90,7 +90,11 @@ struct
 
   type inst = opcode * operand * operand * operand 
 
-
+  fun showCondition EQ = "EQ"
+    | showCondition NE = "NE"
+    | showCondition HI = "HI"
+    | showCondition LS = "LS"
+    | showCondition NoCond = ""
 
   fun showOperand (Register r) =
       let val regNum = Int.toString r in 
@@ -121,6 +125,8 @@ struct
       in
         "[X" ^ regNum ^ "], #" ^ i
       end
+    | showOperand (Cond c) = showCondition c
+    | showOperand (Label_ s) = s
     | showOperand SP = "SP"
     | showOperand NoOperand = ""
     | showOperand _ = "missing case in showOperand"
@@ -143,6 +149,11 @@ struct
     | showOpcode MOV = "MOV "
     | showOpcode AND = "AND "
     | showOpcode RBIT = "RBIT "
+
+    | showOpcode CMP = "CMP "
+    | showOpcode CSETM = "CSETM "
+    | showOpcode (B c) = "B." ^ showCondition c ^ " "
+
     | showOpcode (LABEL s) = s
     | showOpcode _ = "missing case in showOpcode"
 
