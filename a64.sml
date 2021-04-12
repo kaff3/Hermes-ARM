@@ -271,7 +271,7 @@ struct
       
       | (_ :: ins, lOut :: ls, k :: ks) =>
         setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
-            (fn x => List.concat (List.map (fn y => [(x, y), (x,x)]) 
+            (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
                     (Splayset.listItems (setMinus lOut (list2set [x])))))
                     (Splayset.listItems k)))]
       | _ => list2setP []
@@ -457,7 +457,7 @@ struct
 	                  | SOME c => Splaymap.insert (u,r,c+1))
             uses regs
 	end
-        
+
   fun printGraph interference =
     List.app
       (fn (x,y) => TextIO.output
@@ -486,10 +486,10 @@ struct
       val interference = Splayset.listItems interference0
       val moves = Splayset.listItems (setUnionP (List.map getMoves instrs)) (* find move instructions *)
       val mapping = colourGraph interference moves uses
-      val _ = TextIO.output(TextIO.stdErr, "INTERFERENCE: \n") 
+      (* val _ = TextIO.output(TextIO.stdErr, "INTERFERENCE: \n") 
       val _ = printGraph interference
       val _ = TextIO.output(TextIO.stdErr, "MAPPING: \n") 
-      val _ = printMapping mapping
+      val _ = printMapping mapping *)
     in
       if null (!spilled) then
         let
