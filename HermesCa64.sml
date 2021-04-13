@@ -428,14 +428,13 @@ struct
             (a64.STR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.STR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.STR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
+            (* save SP on stack*)
             (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
-            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand), (* save SP on stack*)
-            
+            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (* error code *)
             (a64.MOV, a64.Register 9, a64.Imm 0, a64.NoOperand),
-            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
-            
-            (* ,(a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] (* placeholder, LEA in x86 *) *)
+            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand),
+            (a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] (* placeholder *)
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),

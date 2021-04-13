@@ -197,10 +197,15 @@ struct
   fun list2setP ll = Splayset.addList (Splayset.empty pairOrder, ll)
 
   (* register-to-register moves *)
-  (* TILFØJ FOR REGISTERW!!! *)
   fun getMoves instr =
     case instr of
-      (MOV, Register x, Register y, _) => list2setP [(x,y), (y,x)]
+      (MOV, op1, op2, _) =>
+        case (op1, op2) of 
+          (Register x, Register y) => list2setP [(x,y), (y,x)]
+        | (Register x, RegisterW y) => list2setP [(x,y), (y,x)]
+        | (RegisterW x, Register y) => list2setP [(x,y), (y,x)]
+        | (RegisterW x, RegisterW y) => list2setP [(x,y), (y,x)]
+        | _ => list2setP []
     | _ => list2setP []
 
   (* reference to list of spilled data *)      
@@ -246,26 +251,36 @@ struct
         STR => emptyset
         | STRB => emptyset
         | STRH => emptyset
+        | CMP => emptyset
       | _ => list2set(regsWritten dest)
     end
 
   (* Liveness analysis, determine out and in set*)
   (* simple one pass because of PE *)
-  (* JMPS for error conditions? *)
   fun liveness1 instrs gen kill =
     case (instrs, gen, kill) of
-      ((opc, _, _, _) :: ins, g :: gs, k :: ks) =>
+      ((opc, op1, _, _) :: ins, g :: gs, k :: ks) =>
         let 
-          val (live1, liveOut) = liveness1 ins gs ks
-          val liveIn = setUnion [setMinus liveOut k, g]
+          val (live1, liveOut, labels) = liveness1 ins gs ks
+          val liveIn = 
+            case ((opc, op1)) of
+              (B c, Label_ l) => 
+                case (c) of 
+                  NoCond => labels l (* unconditional jump *) 
+                  | _ => setUnion [liveOut, labels l]
+              | _ => setUnion [setMinus liveOut k, g]
+          val labels1 = (* update label mapping *)
+            case op1 of
+              Label_ l1 => (fn l => if l=l1 then liveIn else labels l)  
+              | _ => labels
         in 
-          (liveOut :: live1, liveIn)
+          (liveOut :: live1, liveIn, labels1)
         end
-      | _ => ([], emptyset)
+      | _ => ([], emptyset, (fn l => raise Error ("label " ^ l ^ " not found\n")))
 
   (* registers live at exit from instructions *)
   fun liveness instrs gen kill =
-    let val (liveOut, _) = liveness1 instrs gen kill
+    let val (liveOut, _, _) = liveness1 instrs gen kill
     in 
       liveOut
     end
@@ -276,10 +291,25 @@ struct
 
   fun interfere instrs liveOut kill =
     case (instrs, liveOut, kill) of
-      ((MOV, Register x, Register y, _) :: ins, lOut :: ls, k :: ks) =>
-        setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
-          (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]      
-      
+      ((MOV, op1, op2, _) :: ins, lOut :: ls, k :: ks) =>
+        case (op1, op2) of => 
+        (Register x, Register y) => 
+          setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
+            (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))] 
+        | (Register x, RegisterW y) => 
+          setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
+              (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]
+        | (RegisterW x, Register y) => 
+          setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
+              (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]
+        | (RegisterW x, RegisterW y) => 
+          setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
+              (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]
+        | _ => 
+          setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
+              (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
+                      (Splayset.listItems (setMinus lOut (list2set [x])))))
+                      (Splayset.listItems k)))]
       | (_ :: ins, lOut :: ls, k :: ks) =>
         setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
             (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
@@ -324,7 +354,7 @@ struct
 	    end
 
 
-  val allocatable = list2set (argRegs @ [8,9,10,11,12,13,14,15] @ calleeSaves)
+  val allocatable = list2set (argRegs @ [9,10,11,12,13,14,15] @ calleeSaves)
 
   (* select step of graph colouring *)
   fun select [] moves mapping = mapping
@@ -393,14 +423,23 @@ struct
     | ABaseOffI (r, x) => ABaseOffI (mapping r, x)
     | APre (r, x) => APre (mapping r, x)
     | APost (r, x) => APost (mapping r, x)
+    | Cond c => Cond c 
+    | Label_ s => Label_ s 
     | SP => SP
     | NoOperand => NoOperand
 
-  (* add support for RegisterW!!! *)
-  fun notSelfMove (MOV, Register x, Register y, _) = x<>y
-    | notSelfMove _ = true
+  fun notSelfMove inst = 
+    case inst of
+    (MOV, op1, op2, _) => 
+      case (op1, op2) of 
+        (Register x, Register y) => x<>y
+      | (Register x, RegisterW y) => x<>y
+      | (RegisterW x, Register y) => x<>y
+      | (RegisterW x, RegisterW y) => x<>y
+      | _ => true    
+    | _ => true
 
-  val spillOffset = ref (~110)
+  val spillOffset = ref (~152)
   
   (* FOR SPILLED VARIABLES *)
   (* fun replaceRegOp x x1 ope =
@@ -416,10 +455,10 @@ struct
     | NoOperand => ope
 
   fun replaceReg x x1 (opc, z, op1, op2) =
-    (opc, z, replaceRegOp x x1 op1, replaceRegOp x x1 op2) *)
+    (opc, z, replaceRegOp x x1 op1, replaceRegOp x x1 op2)
 
 
-  (* fun spill x offset [] = []
+  fun spill x offset [] = []
     | spill x offset (instr :: instrs) =
          let
 	   val reads = generateLiveness instr
@@ -442,9 +481,9 @@ struct
 	       :: (replaceReg x x1 instr)
 	       :: ("mov", 3, Register x1, Offset (rbp, offset))
 	       :: instrs1
-	 end *)
+	 end
 
-  (* fun spillList [] instrs = instrs
+  fun spillList [] instrs = instrs
     | spillList (x :: xs) instrs =
       let
         val _ = TextIO.output
@@ -489,7 +528,7 @@ struct
   fun registerAllocate instrs = 
     let 
       val _ = spilled := [] 
-      val uses = findUses instrs                    (* *)
+      val uses = findUses instrs                   
       val gen = List.map generateLiveness instrs    (* liveness generation *)
       val kill = List.map killLiveness instrs       (* liveness killed *)
       val liveOut = liveness instrs gen kill        (* propagation *)
@@ -505,12 +544,12 @@ struct
       if null (!spilled) then
         let
           val newInstrs = List.map (reColour mapping) instrs
-          (* val withoutSelf = List.filter notSelfMove newInstrs *)
+          val withoutSelf = List.filter notSelfMove newInstrs
         in
           (newInstrs, !spillOffset - 16)
         end
       else
-      (* if we have spilled variables, do register allokation again *)
+      (* if we have spilled variables, do register allocation again *)
         (* registerAllocate (spillList (!spilled) instrs) *)
         registerAllocate instrs
     end
