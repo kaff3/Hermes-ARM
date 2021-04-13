@@ -385,19 +385,44 @@ struct
           raise HermesCx64.Error ("Not enough parameter locations", (0,0))
       | compileA64Args (Hermes.VarArg (x, (_, it), _) :: args) (l1 :: locs) =
           let
-            val (env, code0, code1) = compileA64Args args locs
+            val (env, code1, code2) = compileA64Args args locs
             val r = a64.newRegister ()
             val r1 = a64.newRegister ()
+
+            val (ldrOpcode, strOpcode, regSize) =
+              (case it of
+                  Hermes.U8  => (a64.LDRB, a64.STRB, a64.RegisterW)
+                | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW)
+                | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
+                | Hermes.U64 => (a64.LDR, a64.STR, a64.Register)
+              )
+
+            val (locCode1, locCode2) = 
+              (case l1 of
+                a64.ABaseOffI (_, _) => 
+                  ([(a64.LDR, a64.Register r, l1, a64.NoOperand),
+                    (ldrOpcode, regSize r1, a64.ABase r, a64.NoOperand)],
+                   [(strOpcode, regSize r1, a64.ABase r, a64.NoOperand)]
+                  )
+                | _ => 
+                  ([(a64.MOV, a64.Register r, l1, a64.NoOperand),
+                    (ldrOpcode, regSize r1, a64.ABase r, a64.NoOperand)],
+                   [(strOpcode, regSize r1, a64.ABase r, a64.NoOperand)]
+                  )
+              )
           in
             (* call by value result *)
             (* TODO: update to load to register *)
-            ((x, (it, r)) :: env,
+            ((x, (it, r1)) :: env,
+            locCode1 @ code1,
+            code2 @ locCode2)
+            (*             
             [(a64.MOV, a64.Register r1, l1, a64.NoOperand),
             (a64.LDR, a64.Register r, a64.ABase r1, a64.NoOperand)]
-            @ code0,
-            code1 @
+            @ code1,
+            code2 @
             [(a64.STR, a64.Register r, a64.ABase r1, a64.NoOperand),
-            (a64.MOV, l1, a64.Register r1, a64.NoOperand)])
+            (a64.MOV, l1, a64.Register r1, a64.NoOperand)]) *)
           end
       | compileA64Args (Hermes.ArrayArg (x, (_, it), _) :: args) (l1 :: locs) =
           let
