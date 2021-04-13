@@ -105,7 +105,11 @@ struct
         "W" ^ regNum
       end
     | showOperand (Imm i) = "#" ^ (Int.toString i)
-    | showOperand (PoolLit n) = "=" ^ n
+    | showOperand (PoolLit n) = 
+      if String.isPrefix "0x" n then
+        "=" ^ n
+      else
+        "=0x" ^ n
     | showOperand (ABaseOffI (r, off)) =
       (*TODO: immediate size check?*)
       let
@@ -113,6 +117,13 @@ struct
       in
         "[X" ^ regNum ^ ", #" ^ off ^ "]" 
       end
+   | showOperand (ABaseOffR (r1, r2)) =
+    let 
+      val reg1 = Int.toString r1
+      val reg2 = Int.toString r2
+    in
+      "[X" ^ reg1 ^ ", X"^ reg2 ^ "]" 
+    end
    | showOperand (ABase r) =
       let
         val regNum = Int.toString r

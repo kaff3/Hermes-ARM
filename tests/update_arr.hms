@@ -1,0 +1,7 @@
+
+upd(u32 a[], public u64 l) {
+    for (i = 0; l) {
+        a[i] += 1;
+        i++;
+    }
+}

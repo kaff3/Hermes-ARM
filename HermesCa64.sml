@@ -323,16 +323,17 @@ struct
               (* find ldr and store sizes *)
               val (ldr, str, reg, off) =
                 case t of
-                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 0)
-                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 1)
-                  | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW, 2)
-                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  3)
+                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, "1")
+                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, "2")
+                  | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW, "4")
+                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  "8")
               val load = 
-                [(a64.LSL, a64.Register iReg, a64.Register iReg, a64.Imm off),
+                [(a64.LDR, a64.Register mulReg, a64.PoolLit off, a64.NoOperand),
+                (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
                 (ldr, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
               val save = [(str, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
               val (setup, maskDown) = 
-                case uop of
+                (case uop of
                 Hermes.RoR => extendBits (a64.Register vReg) t
                 | Hermes.RoL =>
                   let
@@ -342,10 +343,11 @@ struct
                     (set @ rev, rev @ clean)
                   end
                 | _ => ([], [])
+                )
             in
               (* overwrites vReg since all calculations are redone each statement *)
               eCode @ iCode @ load @ setup @ 
-              [(opc, a64.Register vReg, a64.Register vReg, (a64.Register tmp))] @ 
+              [(opc, a64.Register tmp, a64.Register tmp, a64.Register eReg)] @ 
               maskDown @ save
             end
           | Hermes.UnsafeArray(s, i, p) =>
