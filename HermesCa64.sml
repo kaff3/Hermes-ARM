@@ -150,13 +150,15 @@ struct
             if isComparison bop then
               let
                 val cond =
-                  case bop of 
+                  (case bop of 
                       Hermes.Equal   => a64.EQ
                     | Hermes.Less    => a64.LS
                     | Hermes.Greater => a64.HI
                     | Hermes.Neq     => a64.NE
                     | Hermes.Leq     => a64.LS
                     | Hermes.Geq     => a64.HI
+                    | _ => raise HermesCx64.Error ("Condition not implemented", p)
+                  )
                 val compCode = [
                   (a64.CMP, a64.Register target, a64.Register e2Reg, a64.NoOperand),
                   (a64.CSETM, a64.Register target, a64.Cond cond, a64.NoOperand)
@@ -398,14 +400,23 @@ struct
           end
       | compileA64Args (Hermes.ArrayArg (x, (_, it), _) :: args) (l1 :: locs) =
           let
-            val (env, code0, code1) = compileA64Args args locs
+            val (env, code1, code2) = compileA64Args args locs
             val r = a64.newRegister ()
+            val (locCode1, locCode2) = 
+              (case l1 of
+                ABaseOffI (_, _) => 
+                  ([(a64.LDR, a64.Register r, l1, a64.NoOperand)],
+                   [(a64.STR, a64.Register r, l1, a64.NoOperand)]
+                  )
+                | _ => 
+                  ([(a64.MOV, a64.Register r, l1, a64.NoOperand)],
+                   [(a64.MOV, l1, a64.Register r, a64.NoOperand)]
+                  )
+              )
           in
             ((x,(it, r)) :: env,
-            [(a64.MOV, a64.Register r, l1, a64.NoOperand)]
-            @ code0,
-            code1 @
-            [(a64.MOV, l1, a64.Register r, a64.NoOperand)])
+            locCode1 @ code1,
+            code2 @ locCode2
           end
 
 
@@ -433,8 +444,8 @@ struct
             (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (* error code *)
             (a64.MOV, a64.Register 9, a64.Imm 0, a64.NoOperand),
-            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand),
-            (a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] (* placeholder *)
+            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
+            (* (a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] placeholder *)
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),

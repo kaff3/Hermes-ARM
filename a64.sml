@@ -200,12 +200,13 @@ struct
   fun getMoves instr =
     case instr of
       (MOV, op1, op2, _) =>
-        case (op1, op2) of 
+        (case (op1, op2) of 
           (Register x, Register y) => list2setP [(x,y), (y,x)]
         | (Register x, RegisterW y) => list2setP [(x,y), (y,x)]
         | (RegisterW x, Register y) => list2setP [(x,y), (y,x)]
         | (RegisterW x, RegisterW y) => list2setP [(x,y), (y,x)]
         | _ => list2setP []
+        )
     | _ => list2setP []
 
   (* reference to list of spilled data *)      
@@ -265,9 +266,10 @@ struct
           val liveIn = 
             case ((opc, op1)) of
               (B c, Label_ l) => 
-                case (c) of 
+                (case (c) of 
                   NoCond => labels l (* unconditional jump *) 
                   | _ => setUnion [liveOut, labels l]
+                )
               | _ => setUnion [setMinus liveOut k, g]
           val labels1 = (* update label mapping *)
             case op1 of
@@ -292,7 +294,7 @@ struct
   fun interfere instrs liveOut kill =
     case (instrs, liveOut, kill) of
       ((MOV, op1, op2, _) :: ins, lOut :: ls, k :: ks) =>
-        case (op1, op2) of => 
+        (case (op1, op2) of
         (Register x, Register y) => 
           setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
             (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))] 
@@ -310,6 +312,7 @@ struct
               (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
                       (Splayset.listItems (setMinus lOut (list2set [x])))))
                       (Splayset.listItems k)))]
+        )
       | (_ :: ins, lOut :: ls, k :: ks) =>
         setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
             (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
@@ -431,12 +434,13 @@ struct
   fun notSelfMove inst = 
     case inst of
     (MOV, op1, op2, _) => 
-      case (op1, op2) of 
+      (case (op1, op2) of 
         (Register x, Register y) => x<>y
       | (Register x, RegisterW y) => x<>y
       | (RegisterW x, Register y) => x<>y
       | (RegisterW x, RegisterW y) => x<>y
-      | _ => true    
+      | _ => true
+      )
     | _ => true
 
   val spillOffset = ref (~152)
