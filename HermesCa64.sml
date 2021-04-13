@@ -390,6 +390,7 @@ struct
             val r1 = a64.newRegister ()
           in
             (* call by value result *)
+            (* TODO: update to load to register *)
             ((x, (it, r)) :: env,
             [(a64.MOV, a64.Register r1, l1, a64.NoOperand),
             (a64.LDR, a64.Register r, a64.ABase r1, a64.NoOperand)]
@@ -404,7 +405,7 @@ struct
             val r = a64.newRegister ()
             val (locCode1, locCode2) = 
               (case l1 of
-                ABaseOffI (_, _) => 
+                a64.ABaseOffI (_, _) => 
                   ([(a64.LDR, a64.Register r, l1, a64.NoOperand)],
                    [(a64.STR, a64.Register r, l1, a64.NoOperand)]
                   )
@@ -416,7 +417,7 @@ struct
           in
             ((x,(it, r)) :: env,
             locCode1 @ code1,
-            code2 @ locCode2
+            code2 @ locCode2)
           end
 
 
