@@ -371,7 +371,7 @@ struct
             (a64.CMP, a64.Register eReg, a64.Imm 0, a64.NoOperand),
             (a64.B a64.NE, a64.Label_ label, a64.NoOperand, a64.NoOperand),
             (a64.LDR, a64.Register eReg,
-              a64.PoolLit (HermesCx64.signedToString (10000*l+p)), a64.NoOperand),
+              a64.PoolLit (a64.signedToString (10000*l+p)), a64.NoOperand),
             (a64.STR, a64.Register eReg, a64.ABaseOffI(a64.fp, "-144"), a64.NoOperand),
             (a64.B a64.NoCond, a64.Label_ "exit_label_", a64.NoOperand, a64.NoOperand),
             (a64.LABEL label, a64.NoOperand, a64.NoOperand, a64.NoOperand)
@@ -447,6 +447,19 @@ struct
             code2 @ locCode2)
           end
 
+fun stringABS s = if String.isPrefix "-" s then String.extract (s, 1, NONE) else s
+
+fun replaceSPOff [] offset = [] (* should not happen *)
+  | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
+    let
+      val absOffset = Int.abs offset
+    in 
+      if absOffset > 4095 then raise a64.Error "Spilled variables exceeds imm range in replaceSPOff"
+      else
+        ((a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
+    end
+  | replaceSPOff (instr :: instrs) offset =
+        instr :: replaceSPOff instrs offset
 
   fun compileProcedure f args body =
     let
@@ -472,8 +485,9 @@ struct
             (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (* error code *)
             (a64.MOV, a64.Register 9, a64.Imm 0, a64.NoOperand),
-            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
-            (* (a64.STR, a64.SP, a64.ABaseOffI(a64.fp, "-999"), a64.NoOperand)] placeholder *)
+            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand),
+
+            (a64.REPLACESP, a64.NoOperand, a64.NoOperand, a64.NoOperand)] (* placeholder for moving SP *)
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
@@ -491,20 +505,24 @@ struct
             (a64.LDR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
             (a64.LDR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (a64.MOV, a64.SP, a64.Register 9, a64.NoOperand)]
-          (* val epilogue3 = [("xor", 3, x86.Register 10, x86.Register 10),
-              ("xor", 3, x86.Register 11, x86.Register 11)] Zero caller-saves registers not used for parameters *)
-      (* val allCode =
-            prologue1 @ saveCallee  @ bodyCode  @
-      epilogue0 @ epilogue1 @ restoreCallee @ epilogue3 *)
+      
+      (* Zero Caller-Saved registers x9 - x15 *)
+      val epilogue3 = [(a64.EOR, a64.Register 9, a64.Register 9, a64.Register 9),
+                       (a64.EOR, a64.Register 10, a64.Register 10, a64.Register 10),
+                       (a64.EOR, a64.Register 11, a64.Register 11, a64.Register 11),
+                       (a64.EOR, a64.Register 12, a64.Register 12, a64.Register 12),
+                       (a64.EOR, a64.Register 13, a64.Register 13, a64.Register 13),
+                       (a64.EOR, a64.Register 14, a64.Register 14, a64.Register 14),
+                       (a64.EOR, a64.Register 15, a64.Register 15, a64.Register 15)]
       val allCode =
             prologue1 @ saveCallee  @ bodyCode  @
-      epilogue0 @ epilogue1 @ restoreCallee 
+      epilogue0 @ epilogue1 @ restoreCallee @ epilogue3
       val (newCode, offset) = a64.registerAllocate allCode
-      (* val newCode1 = replace999 newCode (signedToString offset) *)
+      val newCode1 = replaceSPOff newCode (offset)
     in
       "int " ^ f ^ "(" ^ arglist ^ ")\n" ^
       "{\n  asm volatile ( \n" ^
-      String.concat (List.map a64.printInstruction newCode) ^
+      String.concat (List.map a64.printInstruction newCode1) ^
       "  );\n}\n\n"
     end 
 end

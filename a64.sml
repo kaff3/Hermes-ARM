@@ -86,7 +86,10 @@ struct
     | CMP
     | CSETM
     | B of cond
-    | LABEL of string (*not an actual opcode*)
+
+    (* not actual opcodes *)
+    | LABEL of string
+    | REPLACESP 
 
   type inst = opcode * operand * operand * operand 
 
@@ -207,6 +210,8 @@ struct
 
   fun list2setP ll = Splayset.addList (Splayset.empty pairOrder, ll)
 
+  fun signedToString n = (if n<0 then "-" else "") ^ Int.toString (Int.abs n)
+
   (* register-to-register moves *)
   fun getMoves instr =
     case instr of
@@ -290,16 +295,26 @@ struct
           (liveOut :: live1, liveIn, labels1)
         end
       | _ => ([], emptyset, (fn l => raise Error ("label " ^ l ^ " not found\n")))
+  
+  fun liveness1 instrs gen kill =
+    case (instrs, gen, kill) of
+      ((opc, _, _, _) :: ins, g :: gs, k :: ks) =>
+        let 
+          val (live1, liveOut) = liveness1 ins gs ks
+          val liveIn = setUnion [setMinus liveOut k, g]
+        in 
+          (liveOut :: live1, liveIn)
+        end
+      | _ => ([], emptyset)
 
   (* registers live at exit from instructions *)
   fun liveness instrs gen kill =
-    let val (liveOut, _, _) = liveness1 instrs gen kill
+    let val (liveOut, _) = liveness1 instrs gen kill
     in 
       liveOut
     end
   
   (* find pairs of interfering registers *)
-  (* VI SKAL OGSÅ TJEKKE FOR REGISTERW det bliver bare grimt *)
   (* reg x interferes with y if x in kill[i] and y in out[i] for inst i *)
 
   fun interfere instrs liveOut kill =
@@ -454,49 +469,51 @@ struct
       )
     | _ => true
 
+
+  (* FUNCTIONS FOR SPILLED VARIABLES *)
   val spillOffset = ref (~152)
   
-  (* FOR SPILLED VARIABLES *)
-  (* fun replaceRegOp x x1 ope =
+  fun replaceRegOp x x1 ope =
     case ope of
       Register y => if x=y then Register x1 else ope
-    | Constant c => ope
-    | Indirect y => if x=y then Indirect x1 else ope
-    | Offset (y,c) => if x=y then Offset (x1,c) else ope
-    | ROffset (y,z) =>
-        ROffset (if x=y then x1 else y, if x=z then x1 else z)
-    | Scaled (y,z,c) =>
-        Scaled (if x=y then x1 else y, if x=z then x1 else z, c)
-    | NoOperand => ope
+    | RegisterW y => if x=y then RegisterW x1 else ope
+    | ABase y => if x = y then ABase x1 else ope
+    | ABaseOffI (y, i) => if x = y then ABaseOffI (x1, i) else ope
+    | ABaseOffR (y, z) =>
+        ABaseOffR (if x = y then x1 else y, if x = z then x1 else z)
+    | APre (y, z) => if x = y then APre (x1, z) else ope
+    | APost (y, z) => if x = y then APost (x1, z) else ope
+    | _ => ope
 
-  fun replaceReg x x1 (opc, z, op1, op2) =
-    (opc, z, replaceRegOp x x1 op1, replaceRegOp x x1 op2)
-
+  fun replaceReg x x1 (opc, op1, op2, op3) =
+    (opc, replaceRegOp x x1 op1, replaceRegOp x x1 op2, replaceRegOp x x1 op3)
 
   fun spill x offset [] = []
     | spill x offset (instr :: instrs) =
-         let
-	   val reads = generateLiveness instr
-	   val writes = killLiveness instr
-	   val instrs1 = spill x offset instrs
-	   val x1 = newRegister ()
-	 in
-	   case (Splayset.member (reads, x), Splayset.member (writes, x)) of
-	     (false, false) => instr :: instrs1
-	   | (true, false) =>
-	       ("mov", 3, Offset (rbp, offset), Register x1)
-	       :: (replaceReg x x1 instr)
-	       :: instrs1
-	   | (false, true) =>
-	       (replaceReg x x1 instr)
-	       :: ("mov", 3, Register x1, Offset (rbp, offset))
-	       :: instrs1
-	   | (true, true) =>
-	       ("mov", 3, Offset (rbp, offset), Register x1)
-	       :: (replaceReg x x1 instr)
-	       :: ("mov", 3, Register x1, Offset (rbp, offset))
-	       :: instrs1
-	 end
+      let
+        val reads1 = generateLiveness instr
+        val reads = Splayset.member (reads1, x)
+        val writes1 = killLiveness instr
+        val writes = Splayset.member (writes1,x)
+        val instrs1 = spill x offset instrs
+        val x1 = newRegister ()
+	    in
+        case (reads, writes) of
+          (false, false) => instr :: instrs1
+        | (true, false) =>
+            (LDR, Register x1, ABaseOffI (fp, offset), NoOperand)
+            :: (replaceReg x x1 instr)
+            :: instrs1
+        | (false, true) =>
+            (replaceReg x x1 instr)
+            :: (STR, Register x1, ABaseOffI (fp, offset), NoOperand)
+            :: instrs1
+        | (true, true) =>
+            (LDR, Register x1, ABaseOffI (fp, offset), NoOperand)
+            :: (replaceReg x x1 instr)
+            :: (STR, Register x1, ABaseOffI (fp, offset), NoOperand)
+            :: instrs1
+	    end
 
   fun spillList [] instrs = instrs
     | spillList (x :: xs) instrs =
@@ -507,7 +524,7 @@ struct
         val instrs1 = spill x offset instrs
 	    in
 	      spillList xs instrs1
-	    end *)
+	    end
 
 
   fun findUses [] = Splaymap.mkDict Int.compare
@@ -544,10 +561,10 @@ struct
     let 
       val _ = spilled := [] 
       val uses = findUses instrs                   
-      val gen = List.map generateLiveness instrs    (* liveness generation *)
-      val kill = List.map killLiveness instrs       (* liveness killed *)
-      val liveOut = liveness instrs gen kill        (* propagation *)
-      val interference0 = interfere instrs liveOut kill (* interference: pair of overlapping *)
+      val gen = List.map generateLiveness instrs                            (* liveness generation *)
+      val kill = List.map killLiveness instrs                               (* liveness killed *)
+      val liveOut = liveness instrs gen kill                                (* propagation *)
+      val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
       val interference = Splayset.listItems interference0
       val moves = Splayset.listItems (setUnionP (List.map getMoves instrs)) (* find move instructions *)
       val mapping = colourGraph interference moves uses
@@ -565,7 +582,6 @@ struct
         end
       else
       (* if we have spilled variables, do register allocation again *)
-        (* registerAllocate (spillList (!spilled) instrs) *)
-        registerAllocate instrs
+        registerAllocate (spillList (!spilled) instrs)
     end
 end
