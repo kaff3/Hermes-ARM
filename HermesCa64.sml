@@ -402,20 +402,20 @@ struct
             val (locCode1, locCode2) = 
               (case l1 of
                 a64.ABaseOffI (_, _) => 
-                  ([(a64.LDR, a64.Register r, l1, a64.NoOperand),
-                    (ldrOpcode, regSize r1, a64.ABase r, a64.NoOperand)],
-                   [(strOpcode, regSize r1, a64.ABase r, a64.NoOperand)]
+                  ([(a64.LDR, a64.Register r1, l1, a64.NoOperand),
+                    (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
+                   [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
                   )
                 | _ => 
-                  ([(a64.MOV, a64.Register r, l1, a64.NoOperand),
-                    (ldrOpcode, regSize r1, a64.ABase r, a64.NoOperand)],
-                   [(strOpcode, regSize r1, a64.ABase r, a64.NoOperand)]
+                  ([(a64.MOV, a64.Register r1, l1, a64.NoOperand), (* can maybe delete *)
+                    (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
+                   [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
                   )
               )
           in
             (* call by value result *)
             (* TODO: update to load to register *)
-            ((x, (it, r1)) :: env,
+            ((x, (it, r)) :: env,
             locCode1 @ code1,
             code2 @ locCode2)
             (*             
