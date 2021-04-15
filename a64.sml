@@ -254,6 +254,12 @@ struct
     | RegisterW r => [r]
     | _ => []
 
+  fun addrModesWritten operand =
+    case operand of 
+      APre (r, _) => [r]
+    | APost (r, _) => [r]
+    | _ => []
+
   (* regs read by i, so live at start of i *)
   fun generateLiveness instr =
     let 
@@ -272,14 +278,14 @@ struct
   (* regs written to by i, so live at end of i *)
   fun killLiveness instr =
     let
-      val (opc, dest, _, _) = instr
+      val (opc, dest, addrOp, _) = instr
     in
       case opc of
-        STR => emptyset
-        | STRB => emptyset
-        | STRH => emptyset
+        STR => list2set(addrModesWritten addrOp)
+        | STRB => list2set(addrModesWritten addrOp)
+        | STRH => list2set(addrModesWritten addrOp)
         | CMP => emptyset
-      | _ => list2set(regsWritten dest)
+      | _ => list2set(regsWritten dest @ addrModesWritten addrOp)
     end
 
   (* Liveness analysis, determine out and in set*)
