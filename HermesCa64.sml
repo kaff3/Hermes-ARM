@@ -570,7 +570,7 @@ fun replaceSPOff [] offset = [] (* should not happen *)
             (a64.REPLACESP, a64.NoOperand, a64.NoOperand, a64.NoOperand)] 
       val bodyCode = compileStat body env
       val epilogue1 =
-            [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
+            [(a64.LABEL ("exit_label_"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
             (a64.LDR, a64.Register 0, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
       val restoreCallee = (* restore callee-saves variables *)
             [(a64.LDR, a64.Register 19, a64.ABaseOffI (a64.fp, "-56"), a64.NoOperand),

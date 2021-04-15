@@ -168,14 +168,21 @@ struct
 
     | showOpcode CMP = "CMP "
     | showOpcode CSETM = "CSETM "
-    | showOpcode (B c) = "B." ^ showCondition c ^ " "
-
-    | showOpcode (LABEL s) = s
+    | showOpcode (B c) = 
+      let
+        val dot = 
+          (case c of
+            NoCond => ""
+            | _ =>  "."
+          )
+      in
+        "B"^ dot ^ showCondition c ^ " "
+      end
     | showOpcode _ = "missing case in showOpcode"
 
   fun printInstruction (opc, op1, op2 ,op3) =
     case opc of
-      (LABEL l) => "\"" ^ l ^ "\\n\\t\"\n"
+      (LABEL l) => "\"" ^ l ^ ":\\n\\t\"\n"
       | _ =>
         let
           val [c2, c3] = List.map (fn n => case n of NoOperand => " " | _ => ", ") [op2, op3]
@@ -257,6 +264,7 @@ struct
         STR => list2set(regsRead op1 @ regsRead op2)
         | STRB => list2set(regsRead op1 @ regsRead op2)
         | STRH => list2set(regsRead op1 @ regsRead op2)
+        | CMP => list2set(regsRead op1 @ regsRead op2)
         (* others can be generalized to read from op2 and op3 *)
       | _ =>  list2set(regsRead op2 @ regsRead op3)
     end
