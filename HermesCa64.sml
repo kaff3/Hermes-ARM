@@ -270,7 +270,7 @@ struct
               (a64.MOV, a64.Register r, a64.SP, a64.NoOperand)]
               @ setupCode @ clearCode @ alloc,
               dealloc @ restoreCode,
-              env
+              env2
           )
         end
       | _ => raise HermesCx64.Error ("Array size should be constant after PR", pos)
