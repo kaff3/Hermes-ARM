@@ -255,7 +255,7 @@ struct
           val setupCode = [(a64.MOV, a64.Register tmpReg, a64.Register r, a64.NoOperand)]
           val clearCode =
             List.tabulate (HermesCx64.fromNumString n,
-              fn i => (strOpcode, regSize a64.zr, a64.APost(tmpReg, immSize), a64.NoOperand))
+              fn i => (strOpcode, a64.XZR, a64.APost(tmpReg, immSize), a64.NoOperand))
           val arraySize = HermesCx64.fromNumString immSize * HermesCx64.fromNumString n 
           (* TODO: sub amount fits within imm optimization? *)
           val subReg = a64.newRegister ()
