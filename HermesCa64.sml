@@ -29,6 +29,13 @@ struct
       Helper Functions
   *)
 
+  fun decToHex dec =
+    let 
+      val decInt = Option.getOpt (Int.fromString dec, 9999)
+    in
+      Int.fmt StringCvt.HEX decInt 
+    end
+
   fun isComparison bop =
     List.exists (fn cmp => cmp = bop)
       [Hermes.Equal, Hermes.Less, Hermes.Greater, 
@@ -89,7 +96,7 @@ struct
     case exp of
       Hermes.Const(n, _) =>
         (* LDR Rn, =0x87654321 *)
-        [(a64.LDR, a64.Register target, a64.PoolLit n, a64.NoOperand)]
+        [(a64.LDR, a64.Register target, a64.PoolLit (decToHex n), a64.NoOperand)]
   
       | (Hermes.Rval lval )=>
         (case lval of
@@ -200,7 +207,7 @@ struct
               val orReg   = a64.newRegister ()
 
               val initCode = [
-                (a64.LDR, a64.Register orReg, a64.PoolLit "0", a64.NoOperand)]
+                (a64.MOV, a64.Register orReg, a64.XZR, a64.NoOperand)]
               val orCode =
                 List.tabulate (HermesCx64.fromNumString n,
                   fn i => [
@@ -260,7 +267,7 @@ struct
           (* TODO: sub amount fits within imm optimization? *)
           val subReg = a64.newRegister ()
           val subCode = 
-            [(a64.LDR, a64.Register subReg, a64.PoolLit (Int.toString arraySize), a64.NoOperand)]
+            [(a64.LDR, a64.Register subReg, a64.PoolLit (decToHex (Int.toString arraySize)), a64.NoOperand)]
 
           (*stack pointer restore*)
           val restoreCode = [(a64.ADD, a64.SP, a64.SP, a64.Register subReg)]
@@ -374,7 +381,7 @@ struct
             (a64.CMP, a64.Register eReg, a64.Imm 0, a64.NoOperand),
             (a64.B a64.NE, a64.Label_ label, a64.NoOperand, a64.NoOperand),
             (a64.LDR, a64.Register eReg,
-              a64.PoolLit (a64.signedToString (10000*l+p)), a64.NoOperand),
+              a64.PoolLit (decToHex (a64.signedToString (10000*l+p))), a64.NoOperand),
             (a64.STR, a64.Register eReg, a64.ABaseOffI(a64.fp, "-144"), a64.NoOperand),
             (a64.B a64.NoCond, a64.Label_ "exit_label_", a64.NoOperand, a64.NoOperand),
             (a64.LABEL label, a64.NoOperand, a64.NoOperand, a64.NoOperand)
@@ -410,7 +417,7 @@ struct
                   | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
           in
             if offset1 > 32760 then
-              [(a64.LDR, a64.Register r2, a64.PoolLit offset, a64.NoOperand), 
+              [(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset), a64.NoOperand), 
                (ldr, reg r1, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
@@ -445,8 +452,8 @@ struct
                 | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
           in
             (* TODO: immediate size offset*)  
-            [(a64.LDR, a64.Register r1, a64.PoolLit offset1, a64.NoOperand),
-             (a64.LDR, a64.Register r2, a64.PoolLit offset2, a64.NoOperand),
+            [(a64.LDR, a64.Register r1, a64.PoolLit (decToHex offset1), a64.NoOperand),
+             (a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset2), a64.NoOperand),
              (ldr, reg r3, a64.ABaseOffR(v1Reg, r1), a64.NoOperand),
              (ldr, reg r4, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
              (str, reg r3, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
@@ -534,7 +541,7 @@ fun replaceSPOff [] offset = [] (* should not happen *)
       val absOffset = Int.abs offset
     in 
       if absOffset > 4095 then
-        ((a64.LDR, a64.Register 9, a64.PoolLit (Int.toString absOffset), a64.NoOperand) ::
+        ((a64.LDR, a64.Register 9, a64.PoolLit (decToHex (Int.toString absOffset)), a64.NoOperand) ::
         (a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
       else
         ((a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
