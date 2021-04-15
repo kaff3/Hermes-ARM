@@ -213,8 +213,11 @@ struct
               val iReg    = a64.newRegister ()
               val orReg   = a64.newRegister ()
 
+              (* TODO: can maybe use vReg instead of iReg
+                  as vReg dies *)
               val initCode = [
-                (a64.MOV, a64.Register orReg, a64.XZR, a64.NoOperand)]
+                (a64.MOV, a64.Register orReg, a64.XZR, a64.NoOperand),
+                (a64.MOV, a64.Register iReg, a64.Register vReg, a64.NoOperand)]
               val orCode =
                 List.tabulate (HermesCx64.fromNumString n,
                   fn i => [
@@ -430,7 +433,7 @@ struct
             else 
               [(ldr, reg r1, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
-               (a64.MOV, a64.Register v1Reg, a64.Register v2Reg, a64.NoOperand)]
+               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
           end
         | (Hermes.Array (y, Hermes.Const (n, p3), p2), Hermes.Var (x, p1)) =>
             compileStat
