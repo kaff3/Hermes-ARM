@@ -48,6 +48,13 @@ struct
       | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))]
       | Hermes.U64 => []
 
+  fun type2Bytes t =
+    case t of
+        Hermes.U8 => 1
+      | Hermes.U16 => 2
+      | Hermes.U32 => 4
+      | Hermes.U64 => 8
+
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
     let 
@@ -297,7 +304,6 @@ struct
             let
               val (t, vReg) = lookup n env p  
               val mask = maskDown (a64.Register vReg) t
-              (* val size = HermesCx64.hSize t *)
               val (setup, revBack) = 
                 (case uop of
                   Hermes.RoR => (extendBits (a64.Register vReg) t, [])
@@ -403,10 +409,10 @@ struct
           let 
             val (t1, v1Reg) = lookup x1 env p1
             val (t2, v2Reg) = lookup x2 env p2
-            val size = HermesCx64.hSize t1
+            val size = type2Bytes t1
             val index = HermesCx64.fromNumString i
-            val offset1 = HermesCx64.size2bytes (size * index)
-            val offset = HermesCx64.signedToString offset1 
+            val offset = size * index
+            val offset1 = HermesCx64.signedToString offset
             val r1 = a64.newRegister()
             val r2 = a64.newRegister()
             val (ldr, str, reg) =
@@ -416,14 +422,14 @@ struct
                   | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
                   | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
           in
-            if offset1 > 32760 then
-              [(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset), a64.NoOperand), 
+            if offset > 32760 then
+              [(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset1), a64.NoOperand), 
                (ldr, reg r1, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
             else 
-              [(ldr, reg r1, a64.ABaseOffI(v2Reg, offset), a64.NoOperand),
-               (str, reg v1Reg, a64.ABaseOffI(v2Reg, offset), a64.NoOperand),
+              [(ldr, reg r1, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
+               (str, reg v1Reg, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
                (a64.MOV, a64.Register v1Reg, a64.Register v2Reg, a64.NoOperand)]
           end
         | (Hermes.Array (y, Hermes.Const (n, p3), p2), Hermes.Var (x, p1)) =>
@@ -435,11 +441,11 @@ struct
           let 
             val (t1, v1Reg) = lookup x1 env p1
             val (t2, v2Reg) = lookup x2 env p2
-            val size = HermesCx64.hSize t1
+            val size = type2Bytes t1
             val index1 = HermesCx64.fromNumString i1 
             val index2 = HermesCx64.fromNumString i2 
-            val offset1 = HermesCx64.signedToString (HermesCx64.size2bytes (size * index1))
-            val offset2 = HermesCx64.signedToString (HermesCx64.size2bytes (size * index2))
+            val offset1 = HermesCx64.signedToString (size * index1)
+            val offset2 = HermesCx64.signedToString (size * index2)
             val r1 = a64.newRegister()
             val r2 = a64.newRegister()
             val r3 = a64.newRegister()
