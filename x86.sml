@@ -474,7 +474,7 @@ struct
           val newInstrs = List.map (reColour mapping) instrs
           val withoutSelf = List.filter notSelfMove newInstrs
         in
-          (newInstrs, !spillOffset - 16)
+          (withoutSelf, !spillOffset - 16)
         end
       else
         registerAllocate (spillList (!spilled) instrs)

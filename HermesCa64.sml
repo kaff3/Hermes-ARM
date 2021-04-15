@@ -34,16 +34,17 @@ struct
       [Hermes.Equal, Hermes.Less, Hermes.Greater, 
        Hermes.Neq, Hermes.Leq, Hermes.Geq]
 
+  fun maskDown src size = 
+    case size of
+        Hermes.U8 => [(a64.AND, src, src, a64.Imm(0xff))]
+      | Hermes.U16 => [(a64.AND, src, src, a64.Imm(0xffff))]
+      | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))]
+      | Hermes.U64 => []
+
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
     let 
       val r1 = a64.newRegister ()
-      val maskDown =
-        case size of
-            Hermes.U8 => [(a64.AND, src, src, a64.Imm(0xff))]
-          | Hermes.U16 => [(a64.AND, src, src, a64.Imm(0xffff))]
-          | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))]
-          | Hermes.U64 => []
       fun extend Hermes.U8 =
           [(a64.LSL, a64.Register r1, src, a64.Imm(8)),
           (a64.ORR, src, src, a64.Register r1)] @
@@ -58,7 +59,7 @@ struct
           extend Hermes.U64
         | extend Hermes.U64 = [] (*to silence compiler*)
     in
-      (extend size, maskDown)
+      (extend size)
     end
 
   (* Debugging functions *)
@@ -288,24 +289,25 @@ struct
           Hermes.Var(n, p) =>
             let
               val (t, vReg) = lookup n env p  
+              val mask = maskDown (a64.Register vReg) t
               (* val size = HermesCx64.hSize t *)
-              val (setup, maskDown) = 
+              val (setup, revBack) = 
                 (case uop of
-                  Hermes.RoR => extendBits (a64.Register vReg) t
+                  Hermes.RoR => (extendBits (a64.Register vReg) t, [])
                   | Hermes.RoL => 
                     let
                       (* Reverse, right rotate, reverse *)
-                      val (set, clean) = extendBits (a64.Register vReg) t
+                      val (set) = extendBits (a64.Register vReg) t
                       val rev = [(a64.RBIT, a64.Register vReg, a64.Register vReg, a64.NoOperand)]
                     in
-                      (set @ rev, rev @ clean)
+                      (set @ rev, rev)
                     end
                   | _ => ([], [])
                 )
             in
               eCode @ setup @ 
               [(opc, a64.Register vReg, a64.Register vReg, (a64.Register eReg))] @ 
-              maskDown
+              revBack @ mask
             end
           | Hermes.Array(s, i, p) =>
             (*
@@ -332,15 +334,16 @@ struct
                 (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
                 (ldr, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
               val save = [(str, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
-              val (setup, maskDown) = 
+              val mask = maskDown (a64.Register vReg) t
+              val (setup, revBack) = 
                 (case uop of
-                Hermes.RoR => extendBits (a64.Register vReg) t
+                Hermes.RoR => (extendBits (a64.Register vReg) t, [])
                 | Hermes.RoL =>
                   let
-                    val (set, clean) = extendBits (a64.Register vReg) t
+                    val (set) = extendBits (a64.Register vReg) t
                     val rev = [(a64.RBIT, (a64.Register vReg), (a64.Register vReg), a64.NoOperand)]
                   in 
-                    (set @ rev, rev @ clean)
+                    (set @ rev, rev)
                   end
                 | _ => ([], [])
                 )
@@ -348,7 +351,7 @@ struct
               (* overwrites vReg since all calculations are redone each statement *)
               eCode @ iCode @ load @ setup @ 
               [(opc, a64.Register tmp, a64.Register tmp, a64.Register eReg)] @ 
-              maskDown @ save
+              revBack @ mask @ save
             end
           | Hermes.UnsafeArray(s, i, p) =>
               compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env
@@ -418,13 +421,6 @@ struct
             ((x, (it, r)) :: env,
             locCode1 @ code1,
             code2 @ locCode2)
-            (*             
-            [(a64.MOV, a64.Register r1, l1, a64.NoOperand),
-            (a64.LDR, a64.Register r, a64.ABase r1, a64.NoOperand)]
-            @ code1,
-            code2 @
-            [(a64.STR, a64.Register r, a64.ABase r1, a64.NoOperand),
-            (a64.MOV, l1, a64.Register r1, a64.NoOperand)]) *)
           end
       | compileA64Args (Hermes.ArrayArg (x, (_, it), _) :: args) (l1 :: locs) =
           let
@@ -447,14 +443,22 @@ struct
             code2 @ locCode2)
           end
 
-fun stringABS s = if String.isPrefix "-" s then String.extract (s, 1, NONE) else s
+(* fun zeroOffsets [] = []
+  | zeroOffsets (offset :: offsets) =
+    let 
+      val zeroRest = zeroOffsets addrs
+    in
+      [(a64.STR, a64.XZR, a64.ABaseOffI, a64.Register 11) :: zeroRest]
+    end *)
 
 fun replaceSPOff [] offset = [] (* should not happen *)
   | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
     let
       val absOffset = Int.abs offset
     in 
-      if absOffset > 4095 then raise a64.Error "Spilled variables exceeds imm range in replaceSPOff"
+      if absOffset > 4095 then
+        ((a64.LDR, a64.Register 9, a64.PoolLit (Int.toString absOffset), a64.NoOperand) ::
+        (a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
       else
         ((a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
     end
@@ -480,14 +484,13 @@ fun replaceSPOff [] offset = [] (* should not happen *)
             (a64.STR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.STR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.STR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
-            (* save SP on stack*)
+            (* save SP *)
             (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
             (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (* error code *)
-            (a64.MOV, a64.Register 9, a64.Imm 0, a64.NoOperand),
-            (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand),
-
-            (a64.REPLACESP, a64.NoOperand, a64.NoOperand, a64.NoOperand)] (* placeholder for moving SP *)
+            (a64.STR, a64.XZR, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand),
+            (* placeholder for moving SP *)
+            (a64.REPLACESP, a64.NoOperand, a64.NoOperand, a64.NoOperand)] 
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_:"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
@@ -503,6 +506,7 @@ fun replaceSPOff [] offset = [] (* should not happen *)
             (a64.LDR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.LDR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.LDR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
+            (* restore SP *)
             (a64.LDR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (a64.MOV, a64.SP, a64.Register 9, a64.NoOperand)]
       
@@ -517,7 +521,7 @@ fun replaceSPOff [] offset = [] (* should not happen *)
       val allCode =
             prologue1 @ saveCallee  @ bodyCode  @
       epilogue0 @ epilogue1 @ restoreCallee @ epilogue3
-      val (newCode, offset) = a64.registerAllocate allCode
+      val (newCode, offset, offsetsToZero) = a64.registerAllocate allCode
       val newCode1 = replaceSPOff newCode (offset)
     in
       "int " ^ f ^ "(" ^ arglist ^ ")\n" ^

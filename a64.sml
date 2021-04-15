@@ -66,6 +66,7 @@ struct
     | Cond of cond
     | Label_ of string
     | SP 
+    | XZR
     | NoOperand
 
   datatype opcode
@@ -142,6 +143,7 @@ struct
     | showOperand (Cond c) = showCondition c
     | showOperand (Label_ s) = s
     | showOperand SP = "SP"
+    | showOperand XZR = "XZR"
     | showOperand NoOperand = ""
     | showOperand _ = "missing case in showOperand"
 
@@ -406,15 +408,15 @@ struct
   (* find best spill candidate *)
   fun bestSpill [] uses (x,ys,score) = (x,ys)
     | bestSpill ((x1,ys1) :: neighbours) uses (x,ys,score) =
-         let
-	   val usesOfx = Splaymap.find (uses,x)
-	   val score1 = (10000 * List.length ys1) div (usesOfx + 1)
-	                (* many neighbours and few uses is better *)
-	 in
-	   if score1 > score
-	   then bestSpill neighbours uses (x1,ys1,score1)
-	   else bestSpill neighbours uses (x,ys,score)
-	 end
+      let
+        val usesOfx = Splaymap.find (uses,x)
+        val score1 = (10000 * List.length ys1) div (usesOfx + 1)
+                      (* many neighbours and few uses is better *)
+	    in
+        if score1 > score
+        then bestSpill neighbours uses (x1,ys1,score1)
+        else bestSpill neighbours uses (x,ys,score)
+      end
 
   fun simplify [] stack moves uses = select stack moves (fn x => x)
     | simplify ((x,ys) :: neighbours) stack moves uses =
@@ -455,6 +457,7 @@ struct
     | Cond c => Cond c 
     | Label_ s => Label_ s 
     | SP => SP
+    | XZR => XZR
     | NoOperand => NoOperand
 
   fun notSelfMove inst = 
@@ -471,6 +474,7 @@ struct
 
   (* FUNCTIONS FOR SPILLED VARIABLES *)
   val spillOffset = ref (~152)
+  val usedOffsets = ref []
   
   fun replaceRegOp x x1 ope =
     case ope of
@@ -520,9 +524,10 @@ struct
         val _ = TextIO.output
                  (TextIO.stdErr, "spill register " ^ Int.toString x ^ "\n")
         val offset = signedToString (spillOffset := !spillOffset - 8; !spillOffset)
+        (* add the offset to list of used offsets to be zeroed later *)
         val instrs1 = spill x offset instrs
 	    in
-	      spillList xs instrs1
+	      usedOffsets := offset :: !usedOffsets; spillList xs instrs1
 	    end
 
 
@@ -577,7 +582,7 @@ struct
           val newInstrs = List.map (reColour mapping) instrs
           val withoutSelf = List.filter notSelfMove newInstrs
         in
-          (newInstrs, !spillOffset - 16)
+          (withoutSelf, !spillOffset - 16, usedOffsets)
         end
       else
       (* if we have spilled variables, do register allocation again *)
