@@ -380,6 +380,83 @@ struct
             (a64.LABEL label, a64.NoOperand, a64.NoOperand, a64.NoOperand)
           ]
         end
+      | Hermes.Swap (lv1, lv2, p) =>
+        (case (lv1, lv2) of
+        (Hermes.Var (x1, p1), Hermes.Var(x2, p2)) =>
+          let
+            val (t1, v1Reg) = lookup x1 env p1
+            val (t2, v2Reg) = lookup x2 env p2
+            val r1 = a64.newRegister ()
+          in
+            [(a64.MOV, a64.Register r1, a64.Register v1Reg, a64.NoOperand),
+            (a64.MOV, a64.Register v1Reg, a64.Register v2Reg, a64.NoOperand),
+            (a64.MOV, a64.Register v2Reg, a64.Register r1, a64.NoOperand)]
+          end
+        | (Hermes.Var (x1, p1), Hermes.Array(x2, Hermes.Const (i, p3), p2)) =>
+          let 
+            val (t1, v1Reg) = lookup x1 env p1
+            val (t2, v2Reg) = lookup x2 env p2
+            val size = HermesCx64.hSize t1
+            val index = HermesCx64.fromNumString i
+            val offset1 = HermesCx64.size2bytes (size * index)
+            val offset = HermesCx64.signedToString offset1 
+            val r1 = a64.newRegister()
+            val r2 = a64.newRegister()
+            val (ldr, str, reg) =
+                (case t1 of
+                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW)
+                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW)
+                  | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
+                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
+          in
+            if offset1 > 32760 then
+              [(a64.LDR, a64.Register r2, a64.PoolLit offset, a64.NoOperand), 
+               (ldr, reg r1, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
+               (str, reg v1Reg, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
+               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
+            else 
+              [(ldr, reg r1, a64.ABaseOffI(v2Reg, offset), a64.NoOperand),
+               (str, reg v1Reg, a64.ABaseOffI(v2Reg, offset), a64.NoOperand),
+               (a64.MOV, a64.Register v1Reg, a64.Register v2Reg, a64.NoOperand)]
+          end
+        | (Hermes.Array (y, Hermes.Const (n, p3), p2), Hermes.Var (x, p1)) =>
+            compileStat
+              (Hermes.Swap (Hermes.Var (x, p1),
+                            Hermes.Array (y, Hermes.Const (n, p3), p2), p)) env
+        | (Hermes.Array (x1, Hermes.Const (i1, p2), p1),
+                        Hermes.Array (x2, Hermes.Const (i2, p4), p3)) =>
+          let 
+            val (t1, v1Reg) = lookup x1 env p1
+            val (t2, v2Reg) = lookup x2 env p2
+            val size = HermesCx64.hSize t1
+            val index1 = HermesCx64.fromNumString i1 
+            val index2 = HermesCx64.fromNumString i2 
+            val offset1 = HermesCx64.signedToString (HermesCx64.size2bytes (size * index1))
+            val offset2 = HermesCx64.signedToString (HermesCx64.size2bytes (size * index2))
+            val r1 = a64.newRegister()
+            val r2 = a64.newRegister()
+            val r3 = a64.newRegister()
+            val r4 = a64.newRegister()
+            val (ldr, str, reg) =
+              (case t1 of
+                Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW)
+                | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW)
+                | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
+                | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
+          in
+            (* TODO: immediate size offset*)  
+            [(a64.LDR, a64.Register r1, a64.PoolLit offset1, a64.NoOperand),
+             (a64.LDR, a64.Register r2, a64.PoolLit offset2, a64.NoOperand),
+             (ldr, reg r3, a64.ABaseOffR(v1Reg, r1), a64.NoOperand),
+             (ldr, reg r4, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
+             (str, reg r3, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
+             (str, reg r4, a64.ABaseOffR(v1Reg, r1), a64.NoOperand)]
+          end
+        | (Hermes.UnsafeArray (y, e, p2), lv) =>
+          compileStat (Hermes.Swap (Hermes.Array (y, e, p2), lv, p)) env
+        | (lv, Hermes.UnsafeArray (y, e, p2)) =>
+          compileStat (Hermes.Swap (lv, Hermes.Array (y, e, p2), p)) env
+        | _ => raise HermesCx64.Error ("unmatched swap case", p))
       | _ => (* Should never happen only for debugging *)
         [(a64.LABEL ("compileStat: " ^ debugStat stat), 
           a64.NoOperand, a64.NoOperand, a64.NoOperand)]
