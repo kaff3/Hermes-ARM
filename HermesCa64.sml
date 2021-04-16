@@ -107,7 +107,6 @@ struct
       Hermes.Const(n, _) =>
         (* LDR Rn, =0x87654321 *)
         [(a64.LDR, a64.Register target, a64.PoolLit (decToHex n), a64.NoOperand)]
-  
       | (Hermes.Rval lval )=>
         (case lval of
           (Hermes.Var (s, p)) =>
@@ -539,13 +538,15 @@ struct
             code2 @ locCode2)
           end
 
-(* fun zeroOffsets [] = []
+fun zeroOffsets [] = []
   | zeroOffsets (offset :: offsets) =
     let 
-      val zeroRest = zeroOffsets addrs
+      val offsetsZeroed = zeroOffsets offsets
     in
-      [(a64.STR, a64.XZR, a64.ABaseOffI, a64.Register 11) :: zeroRest]
-    end *)
+      [(a64.LDR, a64.Register 9, a64.PoolLit offset, a64.NoOperand),
+       (a64.STR, a64.XZR, a64.ABaseOffR(a64.fp, 9), a64.NoOperand)] 
+       :: offsetsZeroed
+    end
 
 fun replaceSPOff [] offset = [] (* should not happen *)
   | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
