@@ -30,11 +30,14 @@ struct
   *)
 
   fun decToHex dec =
-    let 
-      val decInt = Option.getOpt (Int.fromString dec, 9999)
-    in
-      Int.fmt StringCvt.HEX decInt 
-    end
+    if String.isPrefix "0x" dec then
+      dec
+    else
+      let 
+        val decInt = Option.getOpt (Int.fromString dec, 9999)
+      in
+        Int.fmt StringCvt.HEX decInt 
+      end
 
   fun isComparison bop =
     List.exists (fn cmp => cmp = bop)
@@ -322,7 +325,7 @@ struct
                 )
             in
               eCode @ setup @ 
-              [(opc, a64.Register vReg, a64.Register vReg, (a64.Register eReg))] @ 
+              [(opc, a64.Register vReg, a64.Register vReg, a64.Register eReg)] @ 
               revBack @ mask
             end
           | Hermes.Array(s, i, p) =>
