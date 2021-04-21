@@ -24,8 +24,9 @@ struct
               ["W30", "X30"]] (* 31: WZR/XZR/WSP/SP *)
               (* TODO pseudo registers? *)
   
-  val argRegs = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-  val returnRegs = [0,1,2,3,4,5,6,7,8]
+  val argRegs = [0, 1, 2, 3, 4, 5, 6, 7]
+  val returnRegs = [0,1,2,3,4,5,6,7]
+  val callerSaves = [8,9,10,11,12,13,14,15]
   val calleeSaves = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
   val fp = 29
   val zr = 31
@@ -262,18 +263,20 @@ struct
 
   (* regs read by i, so live at start of i *)
   fun generateLiveness instr =
-    let 
-      val (opc, op1, op2, op3) = instr
-    in 
-      case opc of
-        (* STR only op that reads from op1*)
-        STR => list2set(regsRead op1 @ regsRead op2)
-        | STRB => list2set(regsRead op1 @ regsRead op2)
-        | STRH => list2set(regsRead op1 @ regsRead op2)
-        | CMP => list2set(regsRead op1 @ regsRead op2)
-        (* others can be generalized to read from op2 and op3 *)
-      | _ =>  list2set(regsRead op2 @ regsRead op3)
-    end
+    case instr of 
+      (EOR, _, op2, op3) =>
+        if op2 = op3 then emptyset
+        else list2set(regsRead op2 @ regsRead op3)
+    | (opc, op1, op2, op3) =>
+        (case opc of
+          (* STR only op that reads from op1*)
+          STR => list2set(regsRead op1 @ regsRead op2)
+          | STRB => list2set(regsRead op1 @ regsRead op2)
+          | STRH => list2set(regsRead op1 @ regsRead op2)
+          | CMP => list2set(regsRead op1 @ regsRead op2)
+          (* others can be generalized to read from op2 and op3 *)
+        | _ =>  list2set(regsRead op2 @ regsRead op3))
+    
   
   (* regs written to by i, so live at end of i *)
   fun killLiveness instr =
@@ -399,7 +402,7 @@ struct
 	    end
 
 
-  val allocatable = list2set (argRegs @ [9,10,11,12,13,14,15] @ calleeSaves)
+  val allocatable = list2set (argRegs @ callerSaves @ calleeSaves)
 
   (* select step of graph colouring *)
   fun select [] moves mapping = mapping
@@ -457,6 +460,7 @@ struct
   fun reColour mapping (opc, op1, op2, op3) =
     (opc, reColourOp mapping op1, reColourOp mapping op2,  reColourOp mapping op3)
 
+  (*TODO: Maybe create wildcard case as in replaceRegOp*)
   and reColourOp mapping oper =
     case oper of
       Register r => Register (mapping r)
@@ -578,12 +582,12 @@ struct
   fun registerAllocate instrs = 
     let 
       val _ = spilled := [] 
-      val uses = findUses instrs                   
       val gen = List.map generateLiveness instrs                            (* liveness generation *)
       val kill = List.map killLiveness instrs                               (* liveness killed *)
       val liveOut = liveness instrs gen kill                                (* propagation *)
       val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
       val interference = Splayset.listItems interference0
+      val uses = findUses instrs                   
       val moves = Splayset.listItems (setUnionP (List.map getMoves instrs)) (* find move instructions *)
       val mapping = colourGraph interference moves uses
       (* val _ = TextIO.output(TextIO.stdErr, "INTERFERENCE: \n") 

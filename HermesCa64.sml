@@ -538,6 +538,7 @@ struct
             code2 @ locCode2)
           end
 
+(* generates code to zero the input list of fp offsets in memory *)
 fun zeroOffsets [] = []
   | zeroOffsets (offset :: offsets) =
     let 
@@ -547,6 +548,26 @@ fun zeroOffsets [] = []
        (a64.STR, a64.XZR, a64.ABaseOffR(a64.fp, 9), a64.NoOperand)] 
        :: offsetsZeroed
     end
+
+(* generates code to zero the input list of registers *)
+fun zeroRegisters [] = []
+  | zeroRegisters (reg :: regs) =
+    let
+      val regsZeroed = zeroRegisters regs
+    in
+      (a64.EOR, a64.Register reg, a64.Register reg, a64.Register reg) :: regsZeroed
+    end
+
+(* create list of unused parameter registers *)
+(* takes number of used parameter registers as input *)
+fun unusedParaRegisters regVal =
+    if regVal > 7 orelse regVal < 1 then [] 
+    else 
+      let
+        val regs = unusedParaRegisters (regVal + 1)
+      in
+        regVal :: regs
+      end
 
 fun replaceSPOff [] offset = [] (* should not happen *)
   | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
@@ -607,14 +628,12 @@ fun replaceSPOff [] offset = [] (* should not happen *)
             (a64.LDR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (a64.MOV, a64.SP, a64.Register 9, a64.NoOperand)]
       
-      (* Zero Caller-Saved registers x9 - x15 *)
-      val epilogue3 = [(a64.EOR, a64.Register 9, a64.Register 9, a64.Register 9),
-                       (a64.EOR, a64.Register 10, a64.Register 10, a64.Register 10),
-                       (a64.EOR, a64.Register 11, a64.Register 11, a64.Register 11),
-                       (a64.EOR, a64.Register 12, a64.Register 12, a64.Register 12),
-                       (a64.EOR, a64.Register 13, a64.Register 13, a64.Register 13),
-                       (a64.EOR, a64.Register 14, a64.Register 14, a64.Register 14),
-                       (a64.EOR, a64.Register 15, a64.Register 15, a64.Register 15)]
+      (* Zero Caller-Saved registers *)
+      (* x9 - x15 and unused parameter registers *)
+      val callerSavedToZero = unusedParaRegisters (List.length args) @ a64.callerSaves
+      
+      val epilogue3 = zeroRegisters callerSavedToZero
+
       val allCode =
             prologue1 @ saveCallee  @ bodyCode  @
       epilogue0 @ epilogue1 @ restoreCallee @ epilogue3
