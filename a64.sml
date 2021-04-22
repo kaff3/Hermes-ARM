@@ -307,28 +307,18 @@ struct
                 )
               | _ => setUnion [setMinus liveOut k, g]
           val labels1 = (* update label mapping *)
-            case op1 of
-              Label_ l1 => (fn l => if l=l1 then liveIn else labels l)  
+            case opc of
+              LABEL l1 => (fn l => if l=l1 then liveIn else labels l)  
               | _ => labels
         in 
           (liveOut :: live1, liveIn, labels1)
         end
       | _ => ([], emptyset, (fn l => raise Error ("label " ^ l ^ " not found\n")))
   
-  fun liveness1 instrs gen kill =
-    case (instrs, gen, kill) of
-      ((opc, _, _, _) :: ins, g :: gs, k :: ks) =>
-        let 
-          val (live1, liveOut) = liveness1 ins gs ks
-          val liveIn = setUnion [setMinus liveOut k, g]
-        in 
-          (liveOut :: live1, liveIn)
-        end
-      | _ => ([], emptyset)
 
   (* registers live at exit from instructions *)
   fun liveness instrs gen kill =
-    let val (liveOut, _) = liveness1 instrs gen kill
+    let val (liveOut, _, _) = liveness1 instrs gen kill
     in 
       liveOut
     end

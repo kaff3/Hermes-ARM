@@ -631,7 +631,6 @@ fun replaceSPOff [] offset = [] (* should not happen *)
       (* Zero Caller-Saved registers *)
       (* x9 - x15 and unused parameter registers *)
       val callerSavedToZero = unusedParaRegisters (List.length args) @ a64.callerSaves
-      
       val epilogue3 = zeroRegisters callerSavedToZero
 
       val allCode =
