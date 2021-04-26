@@ -6,30 +6,11 @@ struct
 
   exception Error of string
 
-  val genRegs = [["W0", "X0"], ["W1", "X1"],
-              ["W2", "X2"], ["W3", "X3"],
-              ["W4", "X4"], ["W5", "X5"],
-              ["W6", "X6"], ["W7", "X7"],
-              ["W8", "X8"], ["W9", "X9"],
-              ["W10", "X10"], ["W11", "X11"],
-              ["W12", "X12"], ["W13", "X13"],
-              ["W14", "X14"], ["W15", "X15"],
-              ["W16", "X16"], ["W17", "X17"],
-              ["W18", "X18"], ["W19", "X19"],
-              ["W20", "X20"], ["W21", "X21"],
-              ["W22", "X22"], ["W23", "X24"],
-              ["W24", "X24"], ["W25", "X25"],
-              ["W26", "X26"], ["W27", "X27"],
-              ["W28", "X28"], ["W29", "X29"],
-              ["W30", "X30"]] (* 31: WZR/XZR/WSP/SP *)
-              (* TODO pseudo registers? *)
-  
   val argRegs = [0, 1, 2, 3, 4, 5, 6, 7]
   val returnRegs = [0,1,2,3,4,5,6,7]
-  val callerSaves = [8,9,10,11,12,13,14,15]
+  val callerSaves = [8,9,10,11,12,13,14,15,16,17,18]
   val calleeSaves = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
   val fp = 29
-  val zr = 31
 
   (* Used for pseudo-registers*)
   val regCounter = ref 31
@@ -162,8 +143,10 @@ struct
     | showOpcode ROR = "ROR "
     | showOpcode EOR = "EOR "
     | showOpcode LSL = "LSL "
+    | showOpcode LSR = "LSR "
     | showOpcode ORR = "ORR "
     | showOpcode MOV = "MOV "
+    | showOpcode MVN = "MVN "
     | showOpcode AND = "AND "
     | showOpcode RBIT = "RBIT "
 
@@ -358,9 +341,9 @@ struct
   (* find node with fewest neighbours *)
   fun fewestNeighbours [] (x,ys) = (x,ys)
     | fewestNeighbours ((x1,ys1) :: neighbours) (x,ys) =
-        if List.length ys1 < List.length ys
-	then fewestNeighbours neighbours (x1,ys1)
-	else fewestNeighbours neighbours (x,ys)
+      if List.length ys1 < List.length ys then 
+        fewestNeighbours neighbours (x1,ys1)
+      else fewestNeighbours neighbours (x,ys)
 
   (* registers that can be allocated -- NOT FP (29)*)
   (* maybe not r16-r18 and r30 *)
@@ -393,6 +376,7 @@ struct
 
 
   val allocatable = list2set (argRegs @ callerSaves @ calleeSaves)
+  val numAllocatable = List.length (argRegs @ callerSaves @ calleeSaves)
 
   (* select step of graph colouring *)
   fun select [] moves mapping = mapping
@@ -430,11 +414,11 @@ struct
       let
         val (x1, ys1) = fewestNeighbours neighbours (x,ys) (* ys = neighbours *)
         val (x2, ys2) = 
-              if List.length ys1 < 26 then (x1, ys1) (* colourable , see allocatable *)
+              if List.length ys1 < numAllocatable then (x1, ys1) (* colourable *)
               else bestSpill ((x,ys) :: neighbours) uses (x,ys,~1) (* find spill candidate *)
         val neighbours1 = remove x2 ((x,ys) :: neighbours)
 	    in
-            simplify neighbours1 ((x2,ys2) :: stack) moves uses
+        simplify neighbours1 ((x2,ys2) :: stack) moves uses
 	    end
 
   fun colourGraph interference moves uses =

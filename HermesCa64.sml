@@ -602,7 +602,7 @@ fun replaceSPOff [] offset = [] (* should not happen *)
             (a64.STR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.STR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.STR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
-            (* save SP *)
+            (* save SP, USE PSEUDO-REG INSTEAD? *)
             (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
             (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (* error code *)
