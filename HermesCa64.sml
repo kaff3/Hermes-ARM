@@ -263,18 +263,18 @@ struct
           val env1 = (x, (it, r)) :: env
           val (alloc, dealloc, env2) = compileDecs ds env1
           (* Find out which STR opcode to use *)
-          val (strOpcode, regSize, immSize) = 
+          val (strOpcode, regSize, immSize, zr) = 
             (case it of
-              Hermes.U8    => (a64.STRB, a64.RegisterW, "1")
-              | Hermes.U16 => (a64.STRH, a64.RegisterW, "2")
-              | Hermes.U32 => (a64.STR, a64.RegisterW,  "4")
-              | Hermes.U64 => (a64.STR, a64.Register,   "8")
+              Hermes.U8    => (a64.STRB, a64.RegisterW, "1", a64.WZR)
+              | Hermes.U16 => (a64.STRH, a64.RegisterW, "2", a64.WZR)
+              | Hermes.U32 => (a64.STR, a64.RegisterW,  "4", a64.WZR)
+              | Hermes.U64 => (a64.STR, a64.Register,   "8", a64.XZR)
             )
           val tmpReg = a64.newRegister ()
           val setupCode = [(a64.MOV, a64.Register tmpReg, a64.Register r, a64.NoOperand)]
           val clearCode =
             List.tabulate (HermesCx64.fromNumString n,
-              fn i => (strOpcode, a64.XZR, a64.APost(tmpReg, immSize), a64.NoOperand))
+              fn i => (strOpcode, zr, a64.APost(tmpReg, immSize), a64.NoOperand))
           val arraySize = HermesCx64.fromNumString immSize * HermesCx64.fromNumString n 
           (* TODO: sub amount fits within imm optimization? *)
           val subReg = a64.newRegister ()
@@ -352,7 +352,7 @@ struct
                 (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
                 (ldr, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
               val save = [(str, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
-              val mask = maskDown (a64.Register vReg) t
+              val mask = maskDown (reg tmp) t
               val (setup, revBack) = 
                 (case uop of
                 Hermes.RoR => (extendBits (a64.Register vReg) t, [])

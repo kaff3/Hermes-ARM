@@ -30,6 +30,8 @@ struct
     | LS  (* x <= y *)
     | NoCond
 
+  
+
   datatype operand
     = Register  of int          (*64 bit*)
     | RegisterW of int          (*32 bit*)
@@ -49,6 +51,7 @@ struct
     | Label_ of string
     | SP 
     | XZR
+    | WZR
     | NoOperand
 
   datatype opcode
@@ -126,6 +129,7 @@ struct
     | showOperand (Label_ s) = s
     | showOperand SP = "SP"
     | showOperand XZR = "XZR"
+    | showOperand WZR = "WZR"
     | showOperand NoOperand = ""
     | showOperand _ = "missing case in showOperand"
 
@@ -382,16 +386,34 @@ struct
   fun select [] moves mapping = mapping
     | select ((x,ys) :: stack) moves mapping =
       let
+        val _ = 
+          if ((List.length stack) mod 100 = 0) then
+            (TextIO.output (TextIO.stdErr, "sel: " ^ (Int.toString (List.length stack)) ^ " "); 0)
+          else 0
+
         val ys1 = list2set (List.map mapping ys)
         val freeRegs =
               Splayset.listItems (setMinus allocatable ys1) (* minus registers used by neighbours *)
-        val moveRelated = List.filter
-            (fn y => List.exists (fn (x1,y1) => (x1,mapping y1) = (x,y)) moves)freeRegs
+        
+        (* look for move instruction x:=y where*)
+        (* y already has been assigned a register and does not interfere with x *)
+        (* then can use same register and will increase num of assignments to be removed *)
+        (* TODO: why find list, just need to find 1 move? *)
+        (* Kan også ændre datastrukturen, hvis x1 *)
+        (* val moveRelated = List.filter
+                    (fn y => List.exists (fn (x1,y1) => (x1,mapping y1) = (x,y)) moves)freeRegs
+      
         val selected =
           case (moveRelated, freeRegs) of
             (y :: ys, _) => y
           | ([], y :: ys) => y
-          | ([], []) => (spilled := x :: !spilled; x)
+          | ([], []) => (spilled := x :: !spilled; x) *)
+        
+        val selected =
+          case freeRegs of
+            (y :: ys) => y
+          | [] => (spilled := x :: !spilled; x)
+      
       in
 	      select stack moves (fn y => if x=y then selected else mapping y)
 	    end
@@ -400,8 +422,9 @@ struct
   fun bestSpill [] uses (x,ys,score) = (x,ys)
     | bestSpill ((x1,ys1) :: neighbours) uses (x,ys,score) =
       let
-        val usesOfx = Splaymap.find (uses,x)
-        val score1 = (10000 * List.length ys1) div (usesOfx + 1)
+        val _ = TextIO.output (TextIO.stdErr, "looking for spill \n")
+        val usesOfx1 = Splaymap.find (uses,x1)
+        val score1 = (10000 * List.length ys1) div (usesOfx1 + 1)
                       (* many neighbours and few uses is better *)
 	    in
         if score1 > score
@@ -411,7 +434,11 @@ struct
 
   fun simplify [] stack moves uses = select stack moves (fn x => x)
     | simplify ((x,ys) :: neighbours) stack moves uses =
-      let
+      let  
+        val _ = 
+          if ((List.length neighbours) mod 100 = 0) then
+            (TextIO.output (TextIO.stdErr, "simp: " ^ (Int.toString (List.length neighbours)) ^ " "); 0)
+          else 0
         val (x1, ys1) = fewestNeighbours neighbours (x,ys) (* ys = neighbours *)
         val (x2, ys2) = 
               if List.length ys1 < numAllocatable then (x1, ys1) (* colourable *)
@@ -450,6 +477,7 @@ struct
     | Label_ s => Label_ s 
     | SP => SP
     | XZR => XZR
+    | WZR => WZR
     | NoOperand => NoOperand
 
   fun notSelfMove inst = 
@@ -555,19 +583,22 @@ struct
 
   fun registerAllocate instrs = 
     let 
-      val _ = spilled := [] 
+      val _ = TextIO.output (TextIO.stdErr, "BEGINNING REGALLO: \n")
+      val _ = spilled := []
+      val _ = TextIO.output (TextIO.stdErr, "Generating liveness \n") 
       val gen = List.map generateLiveness instrs                            (* liveness generation *)
+      val _ = TextIO.output (TextIO.stdErr, "Determining kill-set \n")
       val kill = List.map killLiveness instrs                               (* liveness killed *)
+      val _ = TextIO.output (TextIO.stdErr, "Liveness analysis \n")
       val liveOut = liveness instrs gen kill                                (* propagation *)
+      val _ = TextIO.output (TextIO.stdErr, "Determining interference \n")
       val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
       val interference = Splayset.listItems interference0
       val uses = findUses instrs                   
       val moves = Splayset.listItems (setUnionP (List.map getMoves instrs)) (* find move instructions *)
+      val _ = TextIO.output (TextIO.stdErr, "Graph colouring \n")
       val mapping = colourGraph interference moves uses
-      (* val _ = TextIO.output(TextIO.stdErr, "INTERFERENCE: \n") 
-      val _ = printGraph interference
-      val _ = TextIO.output(TextIO.stdErr, "MAPPING: \n") 
-      val _ = printMapping mapping *)
+      val _ = TextIO.output (TextIO.stdErr, "FINISHING regAllo \n \n")
     in
       if null (!spilled) then
         let
