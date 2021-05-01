@@ -386,33 +386,23 @@ struct
   fun select [] moves mapping = mapping
     | select ((x,ys) :: stack) moves mapping =
       let
-        val _ = 
-          if ((List.length stack) mod 100 = 0) then
-            (TextIO.output (TextIO.stdErr, "sel: " ^ (Int.toString (List.length stack)) ^ " "); 0)
-          else 0
-
         val ys1 = list2set (List.map mapping ys)
-        val freeRegs =
-              Splayset.listItems (setMinus allocatable ys1) (* minus registers used by neighbours *)
+        val freeRegs = setMinus allocatable ys1 (* minus registers used by neighbours *)
         
         (* look for move instruction x:=y where*)
         (* y already has been assigned a register and does not interfere with x *)
         (* then can use same register and will increase num of assignments to be removed *)
-        (* TODO: why find list, just need to find 1 move? *)
-        (* Kan også ændre datastrukturen, hvis x1 *)
-        (* val moveRelated = List.filter
-                    (fn y => List.exists (fn (x1,y1) => (x1,mapping y1) = (x,y)) moves)freeRegs
-      
-        val selected =
-          case (moveRelated, freeRegs) of
-            (y :: ys, _) => y
-          | ([], y :: ys) => y
-          | ([], []) => (spilled := x :: !spilled; x) *)
+        (* determine if (x, mapping y) is a pair in moves and if mapping y is in freeregs*)
         
+        val moveRelated = Splayset.find 
+              (fn (x1, y1) => x1 = x andalso Splayset.member (freeRegs, (mapping y1))) moves
+        val freeRegs1 = Splayset.listItems freeRegs
+
         val selected =
-          case freeRegs of
-            (y :: ys) => y
-          | [] => (spilled := x :: !spilled; x)
+          case (moveRelated, freeRegs1) of
+            (SOME (_ , y), _) => mapping y
+          | (_, y :: ys) => y
+          | _ => (spilled := x :: !spilled; x)
       
       in
 	      select stack moves (fn y => if x=y then selected else mapping y)
@@ -435,10 +425,6 @@ struct
   fun simplify [] stack moves uses = select stack moves (fn x => x)
     | simplify ((x,ys) :: neighbours) stack moves uses =
       let  
-        val _ = 
-          if ((List.length neighbours) mod 100 = 0) then
-            (TextIO.output (TextIO.stdErr, "simp: " ^ (Int.toString (List.length neighbours)) ^ " "); 0)
-          else 0
         val (x1, ys1) = fewestNeighbours neighbours (x,ys) (* ys = neighbours *)
         val (x2, ys2) = 
               if List.length ys1 < numAllocatable then (x1, ys1) (* colourable *)
@@ -595,7 +581,7 @@ struct
       val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
       val interference = Splayset.listItems interference0
       val uses = findUses instrs                   
-      val moves = Splayset.listItems (setUnionP (List.map getMoves instrs)) (* find move instructions *)
+      val moves = setUnionP (List.map getMoves instrs) (* find move instructions *)
       val _ = TextIO.output (TextIO.stdErr, "Graph colouring \n")
       val mapping = colourGraph interference moves uses
       val _ = TextIO.output (TextIO.stdErr, "FINISHING regAllo \n \n")
