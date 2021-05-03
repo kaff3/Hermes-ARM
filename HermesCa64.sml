@@ -475,6 +475,102 @@ struct
         | (lv, Hermes.UnsafeArray (y, e, p2)) =>
           compileStat (Hermes.Swap (lv, Hermes.Array (y, e, p2), p)) env
         | _ => raise HermesCx64.Error ("unmatched swap case", p))
+      | (Hermes.CondSwap (e, l1, l2, p)) =>
+        let
+          val condReg = a64.newRegister ()
+          val tmpReg  = a64.newRegister ()
+          val iReg    = a64.newRegister ()
+          val i2Reg   = a64.newRegister ()
+          val elmReg  = a64.newRegister ()
+          val elm2Reg = a64.newRegister ()
+
+          val condCode = compileExp e condReg env p @
+            [(a64.CMP, a64.Register condReg, a64.Imm 0, a64.NoOperand),
+            (a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand)]
+
+          val clearCode = 
+            [(a64.EOR, a64.Register tmpReg, a64.Register tmpReg, a64.Register tmpReg)]
+          
+          fun getSizes t =
+              (case t of
+                Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
+                | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
+                | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW,   4)
+                | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  8))
+          
+          val lCode =
+            (case (l1, l2) of
+              (Hermes.Var(s1, p1), Hermes.Var(s2, p2)) =>
+                let
+                  val (t1, l1Reg) = lookup s1 env p1
+                  val (t2, l2Reg) = lookup s2 env p2
+                  val (ldr, str, reg, size) = getSizes t1
+                in
+                  [(a64.EOR, a64.Register tmpReg, a64.Register l1Reg, a64.Register l2Reg),
+                  (a64.AND, a64.Register tmpReg, a64.Register condReg, a64.Register tmpReg),
+                  (a64.EOR, a64.Register l1Reg, a64.Register l1Reg, a64.Register tmpReg),
+                  (a64.EOR, a64.Register l2Reg, a64.Register l2Reg, a64.Register tmpReg)]
+                end
+              
+              | (Hermes.Var(s1, p1), Hermes.Array(s2, (Hermes.Const(n, p3)), p2)) =>
+                let
+                  val (t1, l1Reg) = lookup s1 env p1
+                  val (t2, l2Reg) = lookup s2 env p2
+                  val (ldr, str, reg, size) = getSizes t1
+                in
+                  [(a64.LDR, a64.Register iReg, a64.PoolLit n, a64.NoOperand),
+                   (a64.MOV, a64.Register tmpReg, a64.Imm size, a64.NoOperand),
+                   (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
+                   (ldr, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand),
+
+                   (a64.EOR, a64.Register tmpReg, a64.Register l1Reg, a64.Register elmReg),
+                   (a64.AND, a64.Register tmpReg, a64.Register condReg, a64.Register tmpReg),
+                   (a64.EOR, a64.Register l1Reg, a64.Register l1Reg, a64.Register tmpReg),
+                   (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register tmpReg),
+
+                   (str, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand)]
+                  end
+
+              | (Hermes.Array(s1, e1, p1), Hermes.Var(s2, p2)) =>
+                compileStat (Hermes.CondSwap (e, Hermes.Var(s2, p2), Hermes.Array(s1, e1, p1), p)) env
+              
+              | (Hermes.Array(s1, (Hermes.Const (n1, p3)), p1), 
+                 Hermes.Array(s2, (Hermes.Const (n2, p4)), p2)) =>
+                 let
+                  val (t1, l1Reg) = lookup s1 env p1
+                  val (t2, l2Reg) = lookup s2 env p2
+                  val (ldr, str, reg, size) = getSizes t1
+                in
+                  [(a64.LDR, a64.Register iReg, a64.PoolLit n1, a64.NoOperand),
+                   (a64.MOV, a64.Register tmpReg, a64.Imm size, a64.NoOperand),
+                   (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
+                   (ldr, reg elmReg, a64.ABaseOffR(l1Reg, iReg), a64.NoOperand),
+
+                   (a64.LDR, a64.Register i2Reg, a64.PoolLit n2, a64.NoOperand),
+                   (a64.MOV, a64.Register tmpReg, a64.Imm size, a64.NoOperand),
+                   (a64.MUL, a64.Register i2Reg, a64.Register i2Reg, a64.Register tmpReg),
+                   (ldr, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand),
+
+                   (a64.EOR, a64.Register tmpReg, a64.Register elm2Reg, a64.Register elmReg), 
+                   (a64.AND, a64.Register tmpReg, a64.Register condReg, a64.Register tmpReg),
+                   (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register tmpReg),
+                   (a64.EOR, a64.Register elm2Reg, a64.Register elm2Reg, a64.Register tmpReg),
+
+                   (str, reg elmReg, a64.ABaseOffR(l1Reg, iReg), a64.NoOperand),
+                   (str, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand)]
+                  end
+              | (Hermes.UnsafeArray (s1, e1, p1), lv) =>
+                compileStat (Hermes.CondSwap (e, Hermes.Array(s1, e1, p1), lv, p)) env
+              | (lv, Hermes.UnsafeArray (s1, e1, p1)) =>
+                compileStat (Hermes.CondSwap (e, lv, Hermes.Array(s1, e1, p1), p)) env
+            )
+
+        in
+          condCode @ lCode @ clearCode
+        end
+
+
+
       | _ => (* Should never happen only for debugging *)
         [(a64.LABEL ("compileStat: " ^ debugStat stat), 
           a64.NoOperand, a64.NoOperand, a64.NoOperand)]
