@@ -406,9 +406,10 @@ struct
             val (t2, v2Reg) = lookup x2 env p2
             val r1 = a64.newRegister ()
           in
-            [(a64.MOV, a64.Register r1, a64.Register v1Reg, a64.NoOperand),
-            (a64.MOV, a64.Register v1Reg, a64.Register v2Reg, a64.NoOperand),
-            (a64.MOV, a64.Register v2Reg, a64.Register r1, a64.NoOperand)]
+            [(a64.EOR, a64.Register r1, a64.Register v1Reg, a64.Register v2Reg),
+            (a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register r1),
+            (a64.EOR, a64.Register v2Reg, a64.Register v2Reg, a64.Register r1),
+            (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
           end
         | (Hermes.Var (x1, p1), Hermes.Array(x2, Hermes.Const (i, p3), p2)) =>
           let 
@@ -431,11 +432,13 @@ struct
               [(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset1), a64.NoOperand), 
                (ldr, reg r1, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
-               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
+               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand),
+               (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
             else 
               [(ldr, reg r1, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
-               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
+               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand),
+               (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
           end
         | (Hermes.Array (y, Hermes.Const (n, p3), p2), Hermes.Var (x, p1)) =>
             compileStat
@@ -468,7 +471,9 @@ struct
              (ldr, reg r3, a64.ABaseOffR(v1Reg, r1), a64.NoOperand),
              (ldr, reg r4, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
              (str, reg r3, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
-             (str, reg r4, a64.ABaseOffR(v1Reg, r1), a64.NoOperand)]
+             (str, reg r4, a64.ABaseOffR(v1Reg, r1), a64.NoOperand),
+             (a64.EOR, a64.Register r3, a64.Register r3, a64.Register r3),
+             (a64.EOR, a64.Register r4, a64.Register r4, a64.Register r4)]
           end
         | (Hermes.UnsafeArray (y, e, p2), lv) =>
           compileStat (Hermes.Swap (Hermes.Array (y, e, p2), lv, p)) env
@@ -517,10 +522,11 @@ struct
                   val (t1, l1Reg) = lookup s1 env p1
                   val (t2, l2Reg) = lookup s2 env p2
                   val (ldr, str, reg, size) = getSizes t1
+                  val index = HermesCx64.fromNumString n
+                  val offset = HermesCx64.signedToString (size * index)
+ 
                 in
-                  [(a64.LDR, a64.Register iReg, a64.PoolLit n, a64.NoOperand),
-                   (a64.MOV, a64.Register tmpReg, a64.Imm size, a64.NoOperand),
-                   (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
+                [(a64.LDR, a64.Register iReg, a64.PoolLit offset, a64.NoOperand),
                    (ldr, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand),
 
                    (a64.EOR, a64.Register tmpReg, a64.Register l1Reg, a64.Register elmReg),
@@ -528,7 +534,8 @@ struct
                    (a64.EOR, a64.Register l1Reg, a64.Register l1Reg, a64.Register tmpReg),
                    (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register tmpReg),
 
-                   (str, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand)]
+                   (str, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand),
+                   (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register elmReg)]
                   end
 
               | (Hermes.Array(s1, e1, p1), Hermes.Var(s2, p2)) =>
@@ -540,15 +547,16 @@ struct
                   val (t1, l1Reg) = lookup s1 env p1
                   val (t2, l2Reg) = lookup s2 env p2
                   val (ldr, str, reg, size) = getSizes t1
+                  val index1 = HermesCx64.fromNumString n1
+                  val index2 = HermesCx64.fromNumString n2
+                  val offset1 = HermesCx64.signedToString (size * index1)
+                  val offset2 = HermesCx64.signedToString (size * index2)
+
                 in
-                  [(a64.LDR, a64.Register iReg, a64.PoolLit n1, a64.NoOperand),
-                   (a64.MOV, a64.Register tmpReg, a64.Imm size, a64.NoOperand),
-                   (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
+                  [(a64.LDR, a64.Register iReg, a64.PoolLit offset1, a64.NoOperand),
                    (ldr, reg elmReg, a64.ABaseOffR(l1Reg, iReg), a64.NoOperand),
 
-                   (a64.LDR, a64.Register i2Reg, a64.PoolLit n2, a64.NoOperand),
-                   (a64.MOV, a64.Register tmpReg, a64.Imm size, a64.NoOperand),
-                   (a64.MUL, a64.Register i2Reg, a64.Register i2Reg, a64.Register tmpReg),
+                  [(a64.LDR, a64.Register i2Reg, a64.PoolLit offset2, a64.NoOperand),
                    (ldr, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand),
 
                    (a64.EOR, a64.Register tmpReg, a64.Register elm2Reg, a64.Register elmReg), 
@@ -557,7 +565,9 @@ struct
                    (a64.EOR, a64.Register elm2Reg, a64.Register elm2Reg, a64.Register tmpReg),
 
                    (str, reg elmReg, a64.ABaseOffR(l1Reg, iReg), a64.NoOperand),
-                   (str, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand)]
+                   (str, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand),
+                   (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register elmReg),
+                   (a64.EOR, a64.Register elm2Reg, a64.Register elm2Reg, a64.Register elm2Reg)]
                   end
               | (Hermes.UnsafeArray (s1, e1, p1), lv) =>
                 compileStat (Hermes.CondSwap (e, Hermes.Array(s1, e1, p1), lv, p)) env

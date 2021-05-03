@@ -260,17 +260,16 @@ struct
         let
 	  val ys1 = list2set (List.map mapping ys)
 	  val freeRegs =
-	        Splayset.listItems (setMinus allocatable ys1)
-	  val moveRelated =
-	        List.filter
-		  (fn y => List.exists (fn (x1,y1) => (x1,mapping y1) = (x,y))
-		                       moves)
-		  freeRegs
-	  val selected =
-	    case (moveRelated, freeRegs) of
-	      (y :: ys, _) => y
-	    | ([], y :: ys) => y
-	    | ([], []) => (spilled := x :: !spilled; x)
+	        setMinus allocatable ys1
+    val moveRelated = Splayset.find 
+          (fn (x1, y1) => x1 = x andalso Splayset.member (freeRegs, (mapping y1))) moves
+    val freeRegs1 = Splayset.listItems freeRegs
+
+    val selected =
+      case (moveRelated, freeRegs1) of
+        (SOME (_ , y), _) => mapping y
+      | (_, y :: ys) => y
+      | _ => (spilled := x :: !spilled; x)
 	in
 	  select stack moves (fn y => if x=y then selected else mapping y)
 	end
@@ -466,7 +465,7 @@ struct
       val live = liveness instrs gen kill
       val interference0 = interfere instrs live kill
       val interference = Splayset.listItems interference0
-      val moves = Splayset.listItems (setUnion2 (List.map getMoves instrs))
+      val moves = (setUnion2 (List.map getMoves instrs))
       val mapping = colourGraph interference moves uses
     in
       if null (!spilled) then
