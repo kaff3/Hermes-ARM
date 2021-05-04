@@ -25,9 +25,7 @@ struct
     | translateBop _ pos = raise HermesCx64.Error("Binop not implemented", pos)
     
 
-  (*
-      Helper Functions
-  *)
+  (*----- Helper Functions -----*)
 
   fun decToHex dec =
     if String.isPrefix "0x" dec then
@@ -57,6 +55,21 @@ struct
       | Hermes.U16 => 2
       | Hermes.U32 => 4
       | Hermes.U64 => 8
+    
+  fun string2Int s =
+    Option.getOpt (Int.fromString s, 9999)
+  
+  fun int2String i =
+    Int.toString i
+
+    
+  (* Returns the corresponding LDR, STR, Register(W) and byte size for a hermes intType *)
+  fun getForType t =
+    case t of 
+      Hermes.U8  => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
+    | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
+    | Hermes.U32 => (a64.LDR,  a64.STR,  a64.RegisterW, 4)
+    | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  8)
 
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
@@ -79,7 +92,8 @@ struct
       (extend size)
     end
 
-  (* Debugging functions *)
+  (* ----- Debugging functions -----*)
+
   fun debugStat Hermes.Skip                 = "Skip"
     | debugStat (Hermes.Update(_,_,_,_))    = "Update"
     | debugStat (Hermes.Swap(_,_,_))        = "Swap"
@@ -105,45 +119,69 @@ struct
   fun compileExp exp target env pos =
     case exp of
       Hermes.Const(n, _) =>
-        (* LDR Rn, =0x87654321 *)
-        [(a64.LDR, a64.Register target, a64.PoolLit (decToHex n), a64.NoOperand)]
+        [(a64.LDR, a64.Register target, a64.PoolLit n, a64.NoOperand)]
+      
       | (Hermes.Rval lval )=>
         (case lval of
+          (* If Rval is a var *)
           (Hermes.Var (s, p)) =>
-            let
-              val (t, vReg) = lookup s env p
-            in
+            let val (_, vReg) = lookup s env p in
               [(a64.MOV, a64.Register target, a64.Register vReg, a64.NoOperand)]
             end
+          
+          (* If Rval is array with constant index *)
+          | (Hermes.Array (s, Hermes.Const(n, _), p)) =>
+            let
+              val (t, vReg) = lookup s env p
+              val (ldr, _, reg, size) = getForType t
+              val offset = size * (string2Int n)
+              val (maxImm, mulOf) = 
+                (case t of 
+                    Hermes.U64 => (32760, 8) 
+                  | Hermes.U32 => (16380, 4)
+                  | _ =>
+                    (case ldr of
+                        a64.LDRH => (8190, 2)
+                      | a64.LDRB => (4095, 1)
+                      | _ => (9999, 9999) (* should never happen *)
+                    )
+                )
+              (* TODO: Behøver måske ikke tjekke med mulOf. Skulle meget gerne altid
+                 Være det? *)
+              (* TODO: Potential sidechannel attack? *)
+              val ldrCode =
+                if offset < maxImm andalso offset mod mulOf = 0 then
+                  [(ldr, reg target, a64.ABaseOffI(vReg, int2String offset), a64.NoOperand)] 
+                else
+                  let
+                    val iReg = a64.newRegister ()
+                  in
+                    [(a64.LDR, a64.Register iReg, a64.PoolLit (int2String offset), a64.NoOperand),
+                     (ldr, reg target, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
+                  end
+            in
+              ldrCode
+            end
+
+          (* If Rval is an array with non-constant index *)
           | (Hermes.Array (s, e, p)) =>
-            (*Value at index e should end up in target*)
             let
               val (t1, vReg) = lookup s env p
-              val eReg = a64.newRegister ()
-              val eCode = compileExp e eReg env pos
-              (* generate code to to load value *)
-              val (ldrOpcode, regSize, size) =
-                (case t1 of
-                  Hermes.U8    => (a64.LDRB, a64.RegisterW, "1")
-                  | Hermes.U16 => (a64.LDRH, a64.RegisterW, "2")
-                  | Hermes.U32 => (a64.LDR, a64.RegisterW,  "4")
-                  | Hermes.U64 => (a64.LDR, a64.Register,   "8")
-                )
-              (* find offset of element to load *)
-              (*
-                1. Load size of datatype into register sizeReg
-                2. Multiply sizeReg and eReg -> eReg
-                3. Can now use eReg as offset for load to target
-              *)
+              val eReg    = a64.newRegister ()
               val sizeReg = a64.newRegister ()
+
+              val eCode = compileExp e eReg env pos
+              val (ldr, _, reg, size) = getForType t1
+              val size = Int.toString size
               val loadCode = [
-                (a64.LDR, a64.Register sizeReg, a64.PoolLit size, a64.NoOperand),      (*1*)
-                (a64.MUL, a64.Register eReg, a64.Register eReg, a64.Register sizeReg), (*2*)
-                (ldrOpcode, regSize target, a64.ABaseOffR(vReg, eReg), a64.NoOperand)  (*3*)
-              ]
+                (a64.LDR, a64.Register sizeReg, a64.PoolLit size, a64.NoOperand),      
+                (a64.MUL, a64.Register eReg, a64.Register eReg, a64.Register sizeReg), 
+                (ldr, reg target, a64.ABaseOffR(vReg, eReg), a64.NoOperand)]
             in
               eCode @ loadCode
             end
+
+          (* If Rval is an unsafe array*)
           | Hermes.UnsafeArray(x, e, p) => 
             compileExp (Hermes.Rval (Hermes.Array(x,e,pos))) target env pos
         )
@@ -157,6 +195,15 @@ struct
           eCode @ negCode
         end
       
+      (* Binary operator with right side being a constant *)
+      (* | Hermes.Bin (bop, e1, Hermes.Const(n, _), p) =>
+        let
+          val e1Reg  = a64.newRegister ()
+          val e1Code = compileExp e1 e1Reg env p
+        in
+        end *)
+
+      (* Binary operator *)
       | Hermes.Bin (bop, e1, e2, p) =>
         let
           val e2Reg = a64.newRegister ()
@@ -536,7 +583,7 @@ struct
 
                    (str, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand),
                    (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register elmReg)]
-                  end
+                end
 
               | (Hermes.Array(s1, e1, p1), Hermes.Var(s2, p2)) =>
                 compileStat (Hermes.CondSwap (e, Hermes.Var(s2, p2), Hermes.Array(s1, e1, p1), p)) env
@@ -556,7 +603,7 @@ struct
                   [(a64.LDR, a64.Register iReg, a64.PoolLit offset1, a64.NoOperand),
                    (ldr, reg elmReg, a64.ABaseOffR(l1Reg, iReg), a64.NoOperand),
 
-                  [(a64.LDR, a64.Register i2Reg, a64.PoolLit offset2, a64.NoOperand),
+                  (a64.LDR, a64.Register i2Reg, a64.PoolLit offset2, a64.NoOperand),
                    (ldr, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand),
 
                    (a64.EOR, a64.Register tmpReg, a64.Register elm2Reg, a64.Register elmReg), 
@@ -568,7 +615,7 @@ struct
                    (str, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand),
                    (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register elmReg),
                    (a64.EOR, a64.Register elm2Reg, a64.Register elm2Reg, a64.Register elm2Reg)]
-                  end
+                end
               | (Hermes.UnsafeArray (s1, e1, p1), lv) =>
                 compileStat (Hermes.CondSwap (e, Hermes.Array(s1, e1, p1), lv, p)) env
               | (lv, Hermes.UnsafeArray (s1, e1, p1)) =>
@@ -742,8 +789,11 @@ fun replaceSPOff [] offset = [] (* should not happen *)
       val allCode =
             prologue1 @ saveCallee  @ bodyCode  @
       epilogue0 @ epilogue1 @ restoreCallee @ epilogue3
+      val _ = TextIO.output (TextIO.stdErr, "instructions before: " ^ (Int.toString (List.length allCode)) ^ "\n")
+      val _ = TextIO.output (TextIO.stdErr, "pseudo registers: " ^ (Int.toString (a64.newRegister() - 32)) ^ "\n")
       val (newCode, offset, offsetsToZero) = a64.registerAllocate allCode
       val newCode1 = replaceSPOff newCode (offset)
+      val _ = TextIO.output (TextIO.stdErr, "instructions after: " ^ (Int.toString (List.length allCode)) ^ "\n")
     in
       "int " ^ f ^ "(" ^ arglist ^ ")\n" ^
       "{\n  asm volatile ( \n" ^
