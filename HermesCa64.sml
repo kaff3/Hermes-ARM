@@ -323,10 +323,11 @@ struct
             List.tabulate (HermesCx64.fromNumString n,
               fn i => (strOpcode, zr, a64.APost(tmpReg, immSize), a64.NoOperand))
           val arraySize = HermesCx64.fromNumString immSize * HermesCx64.fromNumString n 
+          val alignment = arraySize + (arraySize mod 16)
           (* TODO: sub amount fits within imm optimization? *)
           val subReg = a64.newRegister ()
           val subCode = 
-            [(a64.LDR, a64.Register subReg, a64.PoolLit (decToHex (Int.toString arraySize)), a64.NoOperand)]
+            [(a64.LDR, a64.Register subReg, a64.PoolLit (decToHex (Int.toString alignment)), a64.NoOperand)]
 
           (*stack pointer restore*)
           val restoreCode = [(a64.ADD, a64.SP, a64.SP, a64.Register subReg)]
@@ -625,9 +626,6 @@ struct
         in
           condCode @ lCode @ clearCode
         end
-
-
-
       | _ => (* Should never happen only for debugging *)
         [(a64.LABEL ("compileStat: " ^ debugStat stat), 
           a64.NoOperand, a64.NoOperand, a64.NoOperand)]
@@ -721,17 +719,18 @@ fun unusedParaRegisters regVal =
       in
         regVal :: regs
       end
-
-fun replaceSPOff [] offset = [] (* should not happen *)
+(* update SP to correct offset after reg allocator *)
+fun replaceSPOff [] offset = []
   | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
     let
       val absOffset = Int.abs offset
+      val alignment = absOffset + (absOffset mod 16)
     in 
-      if absOffset > 4095 then
-        ((a64.LDR, a64.Register 9, a64.PoolLit (decToHex (Int.toString absOffset)), a64.NoOperand) ::
-        (a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
+      if alignment > 4095 then
+        ((a64.LDR, a64.Register 9, a64.PoolLit (decToHex (Int.toString alignment)), a64.NoOperand) ::
+        (a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm alignment) :: instrs)
       else
-        ((a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm absOffset) :: instrs)
+        ((a64.SUB, a64.SP, a64.Register a64.fp, a64.Imm alignment) :: instrs)
     end
   | replaceSPOff (instr :: instrs) offset =
         instr :: replaceSPOff instrs offset
