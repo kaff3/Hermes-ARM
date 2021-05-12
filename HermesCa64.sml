@@ -406,8 +406,8 @@ struct
                 Hermes.RoR => (extendBits (a64.Register vReg) t, [])
                 | Hermes.RoL =>
                   let
-                    val (set) = extendBits (a64.Register vReg) t
-                    val rev = [(a64.RBIT, (a64.Register vReg), (a64.Register vReg), a64.NoOperand)]
+                    val (set) = extendBits (a64.Register tmp) t
+                    val rev = [(a64.RBIT, (a64.Register tmp), (a64.Register tmp), a64.NoOperand)]
                   in 
                     (set @ rev, rev)
                   end
@@ -740,7 +740,7 @@ fun replaceSPOff [] offset = []
       val parameterLocations =
         List.map a64.Register a64.argRegs @
         List.map (fn n => a64.ABaseOffI(a64.fp, n)) 
-                  ["-16","-24","-32","-40","-48"]
+                  ["-16","-24","-32","-40","-48"] 
       val arglist = HermesCx64.compileCArgs args
       val (env, prologue1, epilogue0) = compileA64Args args parameterLocations
       val saveCallee = (* save callee-saves variables *)
