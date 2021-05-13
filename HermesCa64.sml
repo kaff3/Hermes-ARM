@@ -341,88 +341,73 @@ struct
           )
         end
       | _ => raise HermesCx64.Error ("Array size should be constant after PR", pos)
-  
+      
 
   fun compileStat stat env =
     (case stat of
       Hermes.Skip => []
+      | Hermes.Update (uop, Hermes.UnsafeArray(s, i, p), e, pos) =>
+        (* Whenever an update with a unsafe array convert it to a safe array *)
+        compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env
       | Hermes.Update (uop, lval, e, pos) =>
         let
           val opc = translateUop uop
           val eReg = a64.newRegister ()
           val eCode = compileExp e eReg env pos
-        in
-        (case lval of
-          Hermes.Var(n, p) =>
+
+          (* t = type and vReg is register containing value *)
+          val (loadCode, saveCode, t, vReg) =
+            (case lval of
+              Hermes.Var(n, p) =>
+                let
+                  val (t, vReg) = lookup n env p
+                in
+                  ([], [], t, vReg)
+                end
+              | Hermes.Array(s, i, p) =>
+                (*TODO: Create loadcode for Array with constant index -> imm*)
+                let
+                  val (t, vReg) = lookup s env p
+                  val iReg = a64.newRegister ()
+                  val tmpReg = a64.newRegister ()
+                  val iCode = compileExp i iReg env p
+                  val (ldr, str, reg, size) = getForType t
+                  val load = [
+                    (a64.LDR, a64.Register tmpReg, a64.PoolLit (int2String size), a64.NoOperand),
+                    (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
+                    (ldr, reg tmpReg, a64.ABaseOffR(vReg, iReg), a64.NoOperand)
+                  ]
+                  val save = (maskDown (reg tmpReg) t) @ [
+                    (str, reg tmpReg, a64.ABaseOffR(vReg, iReg), a64.NoOperand)
+                  ]
+                in
+                  (load, save, t, tmpReg)
+                end
+              | _ => ([],[],Hermes.U8,9999) (*Should never happen. To silence compiler*)
+            )
+          val updateCode =
             let
-              val (t, vReg) = lookup n env p  
-              val mask = maskDown (a64.Register vReg) t
-              val (setup, revBack) = 
+              val updCode = [(opc, a64.Register vReg, a64.Register vReg, a64.Register eReg)]
+              val (setup, cleanup) =
                 (case uop of
-                  Hermes.RoR => (extendBits (a64.Register vReg) t, [])
+                    Hermes.RoR => (extendBits (a64.Register vReg) t, [])
                   | Hermes.RoL => 
-                    let
-                      (* Reverse, right rotate, reverse *)
-                      val (set) = extendBits (a64.Register vReg) t
-                      val rev = [(a64.RBIT, a64.Register vReg, a64.Register vReg, a64.NoOperand)]
+                    let 
+                      val setup   = extendBits (a64.Register vReg) t
+                      val reverse = [(a64.RBIT, a64.Register vReg, a64.Register vReg, a64.NoOperand)]
                     in
-                      (set @ rev, rev)
+                      (setup @ reverse, reverse)
                     end
                   | _ => ([], [])
                 )
             in
-              eCode @ setup @ 
-              [(opc, a64.Register vReg, a64.Register vReg, a64.Register eReg)] @ 
-              revBack @ mask
+              setup @ updCode @ cleanup
             end
-          | Hermes.Array(s, i, p) =>
-            (*
-              1. compile i
-              2. load whatever iReg holds
-              3. Do the update
-              4. Write value back to array index location
-            *)
-            let
-              val (t, vReg) = lookup s env p
-              val iReg = a64.newRegister ()
-              val iCode = compileExp i iReg env p
-              val tmp = a64.newRegister ()
-              val mulReg = a64.newRegister ()
-              (* find ldr and store sizes *)
-              val (ldr, str, reg, off) =
-                case t of
-                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW, "1")
-                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, "2")
-                  | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW, "4")
-                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  "8")
-              val load = 
-                [(a64.LDR, a64.Register mulReg, a64.PoolLit off, a64.NoOperand),
-                (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register mulReg),
-                (ldr, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
-              val save = [(str, reg tmp, a64.ABaseOffR(vReg, iReg), a64.NoOperand)]
-              val mask = maskDown (reg tmp) t
-              val (setup, revBack) = 
-                (case uop of
-                Hermes.RoR => (extendBits (a64.Register vReg) t, [])
-                | Hermes.RoL =>
-                  let
-                    val (set) = extendBits (a64.Register tmp) t
-                    val rev = [(a64.RBIT, (a64.Register tmp), (a64.Register tmp), a64.NoOperand)]
-                  in 
-                    (set @ rev, rev)
-                  end
-                | _ => ([], [])
-                )
-            in
-              (* overwrites vReg since all calculations are redone each statement *)
-              eCode @ iCode @ load @ setup @ 
-              [(opc, a64.Register tmp, a64.Register tmp, a64.Register eReg)] @ 
-              revBack @ mask @ save
-            end
-          | Hermes.UnsafeArray(s, i, p) =>
-              compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env
-        )   
+        in
+          eCode @ loadCode @ updateCode @ saveCode
         end
+        (* ---------- end of Update ----------*)
+      
       | Hermes.Block (dl, ss, pos) =>
         let
           val (code1, code2, env1) = compileDecs dl env
@@ -430,6 +415,8 @@ struct
         in
           code1 @ List.concat ssCode @ code2
         end
+        (* ---------- end of Block ----------*)
+
       | Hermes.Assert (e, (l,p)) =>
         let
           val eReg = a64.newRegister ()
@@ -446,6 +433,8 @@ struct
             (a64.LABEL label, a64.NoOperand, a64.NoOperand, a64.NoOperand)
           ]
         end
+        (* ---------- end of Assert ----------*)
+
       | Hermes.Swap (lv1, lv2, p) =>
         (case (lv1, lv2) of
         (Hermes.Var (x1, p1), Hermes.Var(x2, p2)) =>
@@ -455,7 +444,7 @@ struct
             val r1 = a64.newRegister ()
           in
             [(a64.EOR, a64.Register r1, a64.Register v1Reg, a64.Register v2Reg),
-            (a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register r1),
+            (a64.AND, a64.Register v1Reg, a64.Register v1Reg, a64.Register r1),
             (a64.EOR, a64.Register v2Reg, a64.Register v2Reg, a64.Register r1),
             (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
           end
@@ -528,6 +517,8 @@ struct
         | (lv, Hermes.UnsafeArray (y, e, p2)) =>
           compileStat (Hermes.Swap (lv, Hermes.Array (y, e, p2), p)) env
         | _ => raise HermesCx64.Error ("unmatched swap case", p))
+      (* ---------- end of Swap ----------*)
+      
       | (Hermes.CondSwap (e, l1, l2, p)) =>
         let
           val condReg = a64.newRegister ()
@@ -626,6 +617,8 @@ struct
         in
           condCode @ lCode @ clearCode
         end
+      (* ---------- end of CondSwap ----------*)
+
       | _ => (* Should never happen only for debugging *)
         [(a64.LABEL ("compileStat: " ^ debugStat stat), 
           a64.NoOperand, a64.NoOperand, a64.NoOperand)]
