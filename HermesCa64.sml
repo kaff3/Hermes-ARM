@@ -444,7 +444,7 @@ struct
             val r1 = a64.newRegister ()
           in
             [(a64.EOR, a64.Register r1, a64.Register v1Reg, a64.Register v2Reg),
-            (a64.AND, a64.Register v1Reg, a64.Register v1Reg, a64.Register r1),
+            (a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register r1),
             (a64.EOR, a64.Register v2Reg, a64.Register v2Reg, a64.Register r1),
             (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
           end
