@@ -372,7 +372,7 @@ struct
                   val tmpReg = a64.newRegister ()
                   val iCode = compileExp i iReg env p
                   val (ldr, str, reg, size) = getForType t
-                  val load = [
+                  val load = iCode @ [
                     (a64.LDR, a64.Register tmpReg, a64.PoolLit (int2String size), a64.NoOperand),
                     (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
                     (ldr, reg tmpReg, a64.ABaseOffR(vReg, iReg), a64.NoOperand)
