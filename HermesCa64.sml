@@ -355,8 +355,8 @@ struct
           val eReg = a64.newRegister ()
           val eCode = compileExp e eReg env pos
 
-          (* t = type and vReg is register containing value *)
-          val (loadCode, saveCode, t, vReg) =
+          (* t = type and resReg is register containing result *)
+          val (loadCode, saveCode, t, resReg) =
             (case lval of
               Hermes.Var(n, p) =>
                 let
@@ -387,14 +387,14 @@ struct
             )
           val updateCode =
             let
-              val updCode = [(opc, a64.Register vReg, a64.Register vReg, a64.Register eReg)]
+              val updCode = [(opc, a64.Register resReg, a64.Register resReg, a64.Register eReg)]
               val (setup, cleanup) =
                 (case uop of
-                    Hermes.RoR => (extendBits (a64.Register vReg) t, [])
+                    Hermes.RoR => (extendBits (a64.Register resReg) t, [])
                   | Hermes.RoL => 
                     let 
-                      val setup   = extendBits (a64.Register vReg) t
-                      val reverse = [(a64.RBIT, a64.Register vReg, a64.Register vReg, a64.NoOperand)]
+                      val setup   = extendBits (a64.Register resReg) t
+                      val reverse = [(a64.RBIT, a64.Register resReg, a64.Register resReg, a64.NoOperand)]
                     in
                       (setup @ reverse, reverse)
                     end
