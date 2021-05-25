@@ -362,7 +362,7 @@ struct
                 let
                   val (t, vReg) = lookup n env p
                 in
-                  ([], [], t, vReg)
+                  ([], (maskDown (reg vReg) t), t, vReg)
                 end
               | Hermes.Array(s, i, p) =>
                 (*TODO: Create loadcode for Array with constant index -> imm*)
