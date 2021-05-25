@@ -153,7 +153,6 @@ struct
     | showOpcode MVN = "MVN "
     | showOpcode AND = "AND "
     | showOpcode RBIT = "RBIT "
-
     | showOpcode CMP = "CMP "
     | showOpcode CSETM = "CSETM "
     | showOpcode (B c) = 
@@ -256,7 +255,6 @@ struct
         else list2set(regsRead op2 @ regsRead op3)
     | (opc, op1, op2, op3) =>
         (case opc of
-          (* STR only op that reads from op1*)
           STR => list2set(regsRead op1 @ regsRead op2)
           | STRB => list2set(regsRead op1 @ regsRead op2)
           | STRH => list2set(regsRead op1 @ regsRead op2)

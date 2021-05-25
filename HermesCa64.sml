@@ -119,7 +119,7 @@ struct
   fun compileExp exp target env pos =
     case exp of
       Hermes.Const(n, _) =>
-        [(a64.LDR, a64.Register target, a64.PoolLit n, a64.NoOperand)]
+        [(a64.LDR, a64.Register target, a64.PoolLit (decToHex n), a64.NoOperand)]
       
       | (Hermes.Rval lval )=>
         (case lval of
@@ -362,7 +362,7 @@ struct
                 let
                   val (t, vReg) = lookup n env p
                 in
-                  ([], (maskDown (reg vReg) t), t, vReg)
+                  ([], (maskDown (a64.Register vReg) t), t, vReg)
                 end
               | Hermes.Array(s, i, p) =>
                 (*TODO: Create loadcode for Array with constant index -> imm*)
@@ -441,12 +441,10 @@ struct
           let
             val (t1, v1Reg) = lookup x1 env p1
             val (t2, v2Reg) = lookup x2 env p2
-            val r1 = a64.newRegister ()
           in
-            [(a64.EOR, a64.Register r1, a64.Register v1Reg, a64.Register v2Reg),
-            (a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register r1),
-            (a64.EOR, a64.Register v2Reg, a64.Register v2Reg, a64.Register r1),
-            (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
+            [(a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register v2Reg),
+             (a64.EOR, a64.Register v2Reg, a64.Register v1Reg, a64.Register v2Reg),
+             (a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register v2Reg)]
           end
         | (Hermes.Var (x1, p1), Hermes.Array(x2, Hermes.Const (i, p3), p2)) =>
           let 
@@ -459,23 +457,21 @@ struct
             val r1 = a64.newRegister()
             val r2 = a64.newRegister()
             val (ldr, str, reg) =
-                (case t1 of
-                  Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW)
-                  | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW)
-                  | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
-                  | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
+              (case t1 of
+                Hermes.U8    => (a64.LDRB, a64.STRB, a64.RegisterW)
+                | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW)
+                | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
+                | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
           in
-            if offset > 32760 then
+            if offset > 32760 then (* max immediate size for LDR *)
               [(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset1), a64.NoOperand), 
                (ldr, reg r1, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
-               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand),
-               (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
+               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
             else 
               [(ldr, reg r1, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffI(v2Reg, offset1), a64.NoOperand),
-               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand),
-               (a64.EOR, a64.Register r1, a64.Register r1, a64.Register r1)]
+               (a64.MOV, a64.Register v1Reg, a64.Register r1, a64.NoOperand)]
           end
         | (Hermes.Array (y, Hermes.Const (n, p3), p2), Hermes.Var (x, p1)) =>
             compileStat
@@ -489,8 +485,10 @@ struct
             val size = type2Bytes t1
             val index1 = HermesCx64.fromNumString i1 
             val index2 = HermesCx64.fromNumString i2 
-            val offset1 = HermesCx64.signedToString (size * index1)
-            val offset2 = HermesCx64.signedToString (size * index2)
+            val offset1 = size * index1
+            val offset2 = size * index2
+            val offset11 = HermesCx64.signedToString offset1
+            val offset22 = HermesCx64.signedToString offset2
             val r1 = a64.newRegister()
             val r2 = a64.newRegister()
             val r3 = a64.newRegister()
@@ -501,16 +499,26 @@ struct
                 | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW)
                 | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
                 | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
+            
+            val (a1OffLdr, a1Off) = 
+              if offset1 > 32760 then 
+                ([(a64.LDR, a64.Register r1, a64.PoolLit (decToHex offset11), a64.NoOperand)],
+                a64.ABaseOffR(v1Reg, r1))
+              else
+                ([], a64.ABaseOffI(v1Reg, offset11))
+            
+            val (a2OffLdr, a2Off) = 
+              if offset2 > 32760 then 
+                ([(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset22), a64.NoOperand)],
+                a64.ABaseOffR(v2Reg, r2))
+              else
+                ([], a64.ABaseOffI(v2Reg, offset22))
           in
-            (* TODO: immediate size offset*)  
-            [(a64.LDR, a64.Register r1, a64.PoolLit (decToHex offset1), a64.NoOperand),
-             (a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset2), a64.NoOperand),
-             (ldr, reg r3, a64.ABaseOffR(v1Reg, r1), a64.NoOperand),
-             (ldr, reg r4, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
-             (str, reg r3, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
-             (str, reg r4, a64.ABaseOffR(v1Reg, r1), a64.NoOperand),
-             (a64.EOR, a64.Register r3, a64.Register r3, a64.Register r3),
-             (a64.EOR, a64.Register r4, a64.Register r4, a64.Register r4)]
+            a1OffLdr @ a2OffLdr @
+             [(ldr, reg r3, a1Off, a64.NoOperand),
+              (ldr, reg r4, a2Off, a64.NoOperand),
+              (str, reg r3, a2Off, a64.NoOperand),
+              (str, reg r4, a1Off, a64.NoOperand)]
           end
         | (Hermes.UnsafeArray (y, e, p2), lv) =>
           compileStat (Hermes.Swap (Hermes.Array (y, e, p2), lv, p)) env
