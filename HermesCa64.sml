@@ -657,10 +657,14 @@ struct
                    [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
                   )
                 | _ => 
-                  ([(a64.MOV, a64.Register r1, l1, a64.NoOperand), (* can maybe delete *)
+                  ([ (* can maybe delete *)
+                    (ldrOpcode, regSize r, a64.ABase l1, a64.NoOperand)],
+                   [(strOpcode, regSize r, a64.ABase l1, a64.NoOperand)]
+                  )
+                  (* ([(a64.MOV, a64.Register r1, l1, a64.NoOperand), (* can maybe delete *)
                     (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
                    [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
-                  )
+                  ) *)
               )
           in
             (* call by value result *)
