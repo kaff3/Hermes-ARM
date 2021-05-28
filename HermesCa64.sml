@@ -229,9 +229,12 @@ struct
                 ]
                 val tmpReg = a64.newRegister ()
                 val handleCode =
-                  if bop = Hermes.Less orelse bop = Hermes.Geq then
-                      [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand),
-                       (a64.AND, a64.Register target, a64.Register target, a64.Register tmpReg)]
+                  if bop = Hermes.Geq then
+                    [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.EQ, a64.NoOperand),
+                     (a64.ORR, a64.Register target, a64.Register target, a64.Register tmpReg)]
+                  else if bop = Hermes.Less then
+                    [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand),
+                     (a64.ORR, a64.Register target, a64.Register target, a64.Register tmpReg)]
                   else
                     []
               in
@@ -651,20 +654,22 @@ struct
 
             val (locCode1, locCode2) = 
               (case l1 of
-                a64.ABaseOffI (_, _) => 
+                a64.Register (x) =>
+                  ([(ldrOpcode, regSize r, a64.ABase x, a64.NoOperand)],
+                   [(strOpcode, regSize r, a64.ABase x, a64.NoOperand)])
+                  (* ([(a64.MOV, a64.Register r1, l1, a64.NoOperand), (* can maybe delete *)
+                    (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
+                   [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
+                  ) *)
+
+                | a64.ABaseOffI (_, _) => 
                   ([(a64.LDR, a64.Register r1, l1, a64.NoOperand),
                     (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
                    [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
                   )
                 | _ => 
-                  ([ (* can maybe delete *)
-                    (ldrOpcode, regSize r, a64.ABase l1, a64.NoOperand)],
-                   [(strOpcode, regSize r, a64.ABase l1, a64.NoOperand)]
-                  )
-                  (* ([(a64.MOV, a64.Register r1, l1, a64.NoOperand), (* can maybe delete *)
-                    (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
-                   [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
-                  ) *)
+                  raise HermesCx64.Error(
+                    "Location has to be Register or stack offset. Should never happen.", (0,0))
               )
           in
             (* call by value result *)
