@@ -234,7 +234,7 @@ struct
                      (a64.ORR, a64.Register target, a64.Register target, a64.Register tmpReg)]
                   else if bop = Hermes.Less then
                     [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand),
-                     (a64.ORR, a64.Register target, a64.Register target, a64.Register tmpReg)]
+                     (a64.AND, a64.Register target, a64.Register target, a64.Register tmpReg)]
                   else
                     []
               in
