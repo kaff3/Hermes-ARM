@@ -444,10 +444,11 @@ struct
           let
             val (t1, v1Reg) = lookup x1 env p1
             val (t2, v2Reg) = lookup x2 env p2
+            val r1 = a64.newRegister()
           in
-            [(a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register v2Reg),
-             (a64.EOR, a64.Register v2Reg, a64.Register v1Reg, a64.Register v2Reg),
-             (a64.EOR, a64.Register v1Reg, a64.Register v1Reg, a64.Register v2Reg)]
+            [(a64.MOV, a64.Register r1, a64.Register v1Reg, a64.NoOperand),
+             (a64.MOV, a64.Register v1Reg, a64.Register v2Reg, a64.NoOperand),
+             (a64.MOV, a64.Register v2Reg, a64.Register r1, a64.NoOperand)]
           end
         | (Hermes.Var (x1, p1), Hermes.Array(x2, Hermes.Const (i, p3), p2)) =>
           let 
@@ -542,9 +543,6 @@ struct
           val condCode = compileExp e condReg env p @
             [(a64.CMP, a64.Register condReg, a64.Imm 0, a64.NoOperand),
             (a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand)]
-
-          val clearCode = 
-            [(a64.EOR, a64.Register tmpReg, a64.Register tmpReg, a64.Register tmpReg)]
           
           fun getSizes t =
               (case t of
@@ -584,8 +582,7 @@ struct
                    (a64.EOR, a64.Register l1Reg, a64.Register l1Reg, a64.Register tmpReg),
                    (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register tmpReg),
 
-                   (str, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand),
-                   (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register elmReg)]
+                   (str, reg elmReg, a64.ABaseOffR(l2Reg, iReg), a64.NoOperand)]
                 end
 
               | (Hermes.Array(s1, e1, p1), Hermes.Var(s2, p2)) =>
@@ -615,9 +612,7 @@ struct
                    (a64.EOR, a64.Register elm2Reg, a64.Register elm2Reg, a64.Register tmpReg),
 
                    (str, reg elmReg, a64.ABaseOffR(l1Reg, iReg), a64.NoOperand),
-                   (str, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand),
-                   (a64.EOR, a64.Register elmReg, a64.Register elmReg, a64.Register elmReg),
-                   (a64.EOR, a64.Register elm2Reg, a64.Register elm2Reg, a64.Register elm2Reg)]
+                   (str, reg elm2Reg, a64.ABaseOffR(l2Reg, i2Reg), a64.NoOperand)]
                 end
               | (Hermes.UnsafeArray (s1, e1, p1), lv) =>
                 compileStat (Hermes.CondSwap (e, Hermes.Array(s1, e1, p1), lv, p)) env
@@ -626,7 +621,7 @@ struct
             )
 
         in
-          condCode @ lCode @ clearCode
+          condCode @ lCode
         end
       (* ---------- end of CondSwap ----------*)
 
