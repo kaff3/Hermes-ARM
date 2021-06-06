@@ -388,8 +388,8 @@ struct
         val freeRegs = setMinus allocatable ys1 (* minus registers used by neighbours *)
         
         (* look for move instruction x:=y where*)
-        (* y already has been assigned a register and does not interfere with x *)
-        (* then can use same register and will increase num of assignments to be removed *)
+        (* if y already has been assigned a register and does not interfere with x *)
+        (* can then use same register and will increase num of assignments to be removed *)
         (* determine if (x, mapping y) is a pair in moves and if mapping y is in freeregs*)
         
         val moveRelated = Splayset.find 
@@ -567,22 +567,15 @@ struct
 
   fun registerAllocate instrs = 
     let 
-      val _ = TextIO.output (TextIO.stdErr, "BEGINNING REGALLO: \n")
       val _ = spilled := []
-      val _ = TextIO.output (TextIO.stdErr, "Generating liveness \n") 
       val gen = List.map generateLiveness instrs                            (* liveness generation *)
-      val _ = TextIO.output (TextIO.stdErr, "Determining kill-set \n")
       val kill = List.map killLiveness instrs                               (* liveness killed *)
-      val _ = TextIO.output (TextIO.stdErr, "Liveness analysis \n")
       val liveOut = liveness instrs gen kill                                (* propagation *)
-      val _ = TextIO.output (TextIO.stdErr, "Determining interference \n")
       val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
       val interference = Splayset.listItems interference0
       val uses = findUses instrs                   
       val moves = setUnionP (List.map getMoves instrs) (* find move instructions *)
-      val _ = TextIO.output (TextIO.stdErr, "Graph colouring \n")
       val mapping = colourGraph interference moves uses
-      val _ = TextIO.output (TextIO.stdErr, "FINISHING regAllo \n \n")
     in
       if null (!spilled) then
         let

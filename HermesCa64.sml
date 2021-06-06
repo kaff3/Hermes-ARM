@@ -66,10 +66,10 @@ struct
   (* Returns the corresponding LDR, STR, Register(W) and byte size for a hermes intType *)
   fun getForType t =
     case t of 
-      Hermes.U8  => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
-    | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
-    | Hermes.U32 => (a64.LDR,  a64.STR,  a64.RegisterW, 4)
-    | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  8)
+      Hermes.U8  => (a64.LDRB, a64.STRB, a64.RegisterW, 0)
+    | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 1)
+    | Hermes.U32 => (a64.LDR,  a64.STR,  a64.RegisterW, 2)
+    | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  3)
 
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
@@ -133,7 +133,12 @@ struct
           | (Hermes.Array (s, Hermes.Const(n, _), p)) =>
             let
               val (t, vReg) = lookup s env p
-              val (ldr, _, reg, size) = getForType t
+              val (ldr, _, reg, size) = (
+                case t of 
+                  Hermes.U8  => (a64.LDRB, a64.STRB, a64.RegisterW, 1)
+                | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 2)
+                | Hermes.U32 => (a64.LDR,  a64.STR,  a64.RegisterW, 4)
+                | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  8))
               val offset = size * (string2Int n)
               val (maxImm, mulOf) = 
                 (case t of 
@@ -171,11 +176,9 @@ struct
               val sizeReg = a64.newRegister ()
 
               val eCode = compileExp e eReg env pos
-              val (ldr, _, reg, size) = getForType t1
-              val size = Int.toString size
-              val loadCode = [
-                (a64.LDR, a64.Register sizeReg, a64.PoolLit size, a64.NoOperand),      
-                (a64.MUL, a64.Register eReg, a64.Register eReg, a64.Register sizeReg), 
+              val (ldr, _, reg, shiftVal) = getForType t1
+              val loadCode = [      
+                (a64.LSL, a64.Register eReg, a64.Register eReg, a64.Imm shiftVal), 
                 (ldr, reg target, a64.ABaseOffR(vReg, eReg), a64.NoOperand)]
             in
               eCode @ loadCode
@@ -216,19 +219,26 @@ struct
                 val cond =
                   (case bop of 
                       Hermes.Equal   => a64.EQ
-                    | Hermes.Less    => a64.LS
+                    | Hermes.Less    => a64.HI (*  *)
                     | Hermes.Greater => a64.HI
                     | Hermes.Neq     => a64.NE
                     | Hermes.Leq     => a64.LS
-                    | Hermes.Geq     => a64.HI
+                    | Hermes.Geq     => a64.LS
                     | _ => raise HermesCx64.Error ("Condition not implemented", p)
                   )
-                val compCode = [
-                  (a64.CMP, a64.Register target, a64.Register e2Reg, a64.NoOperand),
-                  (a64.CSETM, a64.Register target, a64.Cond cond, a64.NoOperand)
-                ]
-                val tmpReg = a64.newRegister ()
-                val handleCode =
+                val compCode = 
+                  (* change operands *)
+                  if bop = Hermes.Geq orelse bop = Hermes.Less then
+                    [
+                      (a64.CMP, a64.Register e2Reg, a64.Register target, a64.NoOperand),
+                      (a64.CSETM, a64.Register target, a64.Cond cond, a64.NoOperand)
+                    ]
+                  else
+                    [
+                      (a64.CMP, a64.Register target, a64.Register e2Reg, a64.NoOperand),
+                      (a64.CSETM, a64.Register target, a64.Cond cond, a64.NoOperand)
+                    ]
+                (* val handleCode =
                   if bop = Hermes.Geq then
                     [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.EQ, a64.NoOperand),
                      (a64.ORR, a64.Register target, a64.Register target, a64.Register tmpReg)]
@@ -236,9 +246,9 @@ struct
                     [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand),
                      (a64.AND, a64.Register target, a64.Register target, a64.Register tmpReg)]
                   else
-                    []
+                    [] *)
               in
-                compCode @ handleCode
+                compCode
               end
             else
               [(translateBop bop p, a64.Register target, a64.Register target, a64.Register e2Reg)]
@@ -247,8 +257,6 @@ struct
         end
 
       | Hermes.AllZero(x, exp, p) =>
-        (*TODO: Skal der matches på loc -> hvor arrayet ligger?*)
-        (*TODO: mangler vel at verify længden af arrayet*)
         (case exp of
           Hermes.Const (n, p1)=>
             let
@@ -367,17 +375,49 @@ struct
                 in
                   ([], (maskDown (a64.Register vReg) t), t, vReg)
                 end
+              | Hermes.Array(s, Hermes.Const(i, p2), p1) =>
+                let
+                  val (t, vReg) = lookup s env p1
+                  val (ldr, str, reg, _) = getForType t
+                  val size = (
+                    case t of
+                      Hermes.U8 => 1
+                      | Hermes.U16 => 2
+                      | Hermes.U32 => 4
+                      | Hermes.U64 => 8
+                  )
+                  val offset = size * (string2Int i)
+
+                  val tmpReg = a64.newRegister () (*load value to*)
+                  val oReg = a64.newRegister ()
+
+                  val load =
+                    if (string2Int i) <= 4095 then
+                      [(ldr, reg tmpReg, a64.ABaseOffI(vReg, (int2String offset)), a64.NoOperand)]
+                    else if offset <= 65535 then
+                      [(a64.MOV, a64.Register oReg, a64.Imm offset, a64.NoOperand),
+                       (ldr, reg tmpReg, a64.ABaseOffR(vReg, oReg), a64.NoOperand)]
+                    else
+                      [(a64.LDR, a64.Register oReg, a64.PoolLit (int2String offset), a64.NoOperand),
+                       (ldr, reg tmpReg, a64.ABaseOffR(vReg, oReg), a64.NoOperand)]
+                  
+                  val save =
+                    if (string2Int i) <= 4095 then
+                      [(str, reg tmpReg, a64.ABaseOffI(vReg, (int2String offset)), a64.NoOperand)]
+                    else
+                      [(str, reg tmpReg, a64.ABaseOffR(vReg, oReg), a64.NoOperand)]
+                in
+                  (load, save, t, tmpReg)
+                end
               | Hermes.Array(s, i, p) =>
-                (*TODO: Create loadcode for Array with constant index -> imm*)
                 let
                   val (t, vReg) = lookup s env p
                   val iReg = a64.newRegister ()
                   val tmpReg = a64.newRegister ()
                   val iCode = compileExp i iReg env p
-                  val (ldr, str, reg, size) = getForType t
+                  val (ldr, str, reg, shiftVal) = getForType t
                   val load = iCode @ [
-                    (a64.LDR, a64.Register tmpReg, a64.PoolLit (int2String size), a64.NoOperand),
-                    (a64.MUL, a64.Register iReg, a64.Register iReg, a64.Register tmpReg),
+                    (a64.LSL, a64.Register iReg, a64.Register iReg, a64.Imm shiftVal),
                     (ldr, reg tmpReg, a64.ABaseOffR(vReg, iReg), a64.NoOperand)
                   ]
                   val save = (maskDown (reg tmpReg) t) @ [
@@ -397,7 +437,10 @@ struct
                   | Hermes.RoL => 
                     let 
                       val setup   = extendBits (a64.Register resReg) t
-                      val reverse = [(a64.RBIT, a64.Register resReg, a64.Register resReg, a64.NoOperand)]
+                      val tmpReg = a64.newRegister()
+                      val reverse = [
+                        (a64.MOV, a64.Register tmpReg, a64.Imm 64, a64.NoOperand),
+                        (a64.SUB, a64.Register eReg, a64.Register tmpReg, a64.Register eReg)]
                     in
                       (setup @ reverse, reverse)
                     end
@@ -467,7 +510,7 @@ struct
                 | Hermes.U32 => (a64.LDR, a64.STR, a64.RegisterW)
                 | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
           in
-            if offset > 32760 then (* max immediate size for LDR *)
+            if index > 4095 then (* max immediate size for LDR *)
               [(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset1), a64.NoOperand), 
                (ldr, reg r1, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
                (str, reg v1Reg, a64.ABaseOffR(v2Reg, r2), a64.NoOperand),
@@ -505,14 +548,14 @@ struct
                 | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register))
             
             val (a1OffLdr, a1Off) = 
-              if offset1 > 32760 then 
+              if index1 > 4095 then 
                 ([(a64.LDR, a64.Register r1, a64.PoolLit (decToHex offset11), a64.NoOperand)],
                 a64.ABaseOffR(v1Reg, r1))
               else
                 ([], a64.ABaseOffI(v1Reg, offset11))
             
             val (a2OffLdr, a2Off) = 
-              if offset2 > 32760 then 
+              if index2 > 4095 then 
                 ([(a64.LDR, a64.Register r2, a64.PoolLit (decToHex offset22), a64.NoOperand)],
                 a64.ABaseOffR(v2Reg, r2))
               else
