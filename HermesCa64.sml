@@ -278,14 +278,22 @@ struct
               val initCode = [
                 (a64.MOV, a64.Register orReg, a64.XZR, a64.NoOperand),
                 (a64.MOV, a64.Register iReg, a64.Register vReg, a64.NoOperand)]
+              val arraySize = (HermesCx64.fromNumString n) * (string2Int immSize)
+              val numOrrs = if arraySize mod 8 = 0 then (arraySize div 8) else (arraySize div 8) + 1
               val orCode =
+                List.tabulate (numOrrs,
+                  fn _ => [
+                    (a64.LDR, a64.Register tmpReg, a64.APost(iReg, immSize), a64.NoOperand),
+                    (a64.ORR, a64.Register orReg, a64.Register orReg, a64.Register tmpReg)
+                  ])
+              (* val orCode =
                 List.tabulate (HermesCx64.fromNumString n,
                   fn i => [
                     (ldrOpcode, regSize tmpReg, a64.APost(iReg, immSize), a64.NoOperand),
                     (a64.ORR, regSize orReg, regSize orReg, regSize tmpReg)
-                  ])
+                  ]) *)
               val testCode = [
-                (a64.CMP, regSize orReg, a64.Imm 0, a64.NoOperand),
+                (a64.CMP, a64.Register orReg, a64.Imm 0, a64.NoOperand),
                 (a64.CSETM, a64.Register target, a64.Cond a64.EQ, a64.NoOperand)
               ]
             in
@@ -330,11 +338,15 @@ struct
             )
           val tmpReg = a64.newRegister ()
           val setupCode = [(a64.MOV, a64.Register tmpReg, a64.Register r, a64.NoOperand)]
-          val clearCode =
-            List.tabulate (HermesCx64.fromNumString n,
-              fn i => (strOpcode, zr, a64.APost(tmpReg, immSize), a64.NoOperand))
           val arraySize = HermesCx64.fromNumString immSize * HermesCx64.fromNumString n 
-          val alignment = arraySize + (arraySize mod 16)
+          val alignment = arraySize + (16 - (arraySize mod 16))
+          val numStores = if arraySize mod 8 = 0 then (arraySize div 8) else (arraySize div 8) + 1
+          val clearCode =
+            List.tabulate (numStores,
+               fn _ => (a64.STR, a64.XZR, a64.APost(tmpReg, "8"), a64.NoOperand))
+          (* val clearCode =
+            List.tabulate (HermesCx64.fromNumString n,
+              fn i => (strOpcode, zr, a64.APost(tmpReg, immSize), a64.NoOperand)) *)
           (* TODO: sub amount fits within imm optimization? *)
           val subReg = a64.newRegister ()
           val subCode = 
@@ -376,6 +388,7 @@ struct
                   ([], (maskDown (a64.Register vReg) t), t, vReg)
                 end
               | Hermes.Array(s, Hermes.Const(i, p2), p1) =>
+                (* loadcode and saveocde for array with constant index *)
                 let
                   val (t, vReg) = lookup s env p1
                   val (ldr, str, reg, _) = getForType t
@@ -410,6 +423,7 @@ struct
                   (load, save, t, tmpReg)
                 end
               | Hermes.Array(s, i, p) =>
+                (* loadcode and saveocde for array with non-constant index *)
                 let
                   val (t, vReg) = lookup s env p
                   val iReg = a64.newRegister ()
@@ -431,23 +445,22 @@ struct
           val updateCode =
             let
               val updCode = [(opc, a64.Register resReg, a64.Register resReg, a64.Register eReg)]
-              val (setup, cleanup) =
+              val setup =
                 (case uop of
-                    Hermes.RoR => (extendBits (a64.Register resReg) t, [])
+                    Hermes.RoR => (extendBits (a64.Register resReg) t)
                   | Hermes.RoL => 
                     let 
-                      val setup   = extendBits (a64.Register resReg) t
                       val tmpReg = a64.newRegister()
-                      val reverse = [
+                      val setup   = (extendBits (a64.Register resReg) t) @ [
                         (a64.MOV, a64.Register tmpReg, a64.Imm 64, a64.NoOperand),
                         (a64.SUB, a64.Register eReg, a64.Register tmpReg, a64.Register eReg)]
                     in
-                      (setup @ reverse, reverse)
+                      setup
                     end
-                  | _ => ([], [])
+                  | _ => ([])
                 )
             in
-              setup @ updCode @ cleanup
+              setup @ updCode
             end
         in
           eCode @ loadCode @ updateCode @ saveCode
@@ -772,7 +785,7 @@ fun replaceSPOff [] offset = []
   | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
     let
       val absOffset = Int.abs offset
-      val alignment = absOffset + (absOffset mod 16)
+      val alignment = absOffset + (16 - (absOffset mod 16))
     in 
       if alignment > 4095 then
         ((a64.LDR, a64.Register 9, a64.PoolLit (decToHex (Int.toString alignment)), a64.NoOperand) ::
@@ -836,11 +849,8 @@ fun replaceSPOff [] offset = []
       val allCode =
             prologue1 @ saveCallee  @ bodyCode  @
       epilogue0 @ epilogue1 @ restoreCallee @ epilogue3
-      val _ = TextIO.output (TextIO.stdErr, "instructions before: " ^ (Int.toString (List.length allCode)) ^ "\n")
-      val _ = TextIO.output (TextIO.stdErr, "pseudo registers: " ^ (Int.toString (a64.newRegister() - 32)) ^ "\n")
       val (newCode, offset, offsetsToZero) = a64.registerAllocate allCode
       val newCode1 = replaceSPOff newCode (offset)
-      val _ = TextIO.output (TextIO.stdErr, "instructions after: " ^ (Int.toString (List.length allCode)) ^ "\n")
     in
       "int " ^ f ^ "(" ^ arglist ^ ")\n" ^
       "{\n  asm volatile ( \n" ^
