@@ -1,3 +1,5 @@
+Below follows an introduction on how to use the various tools to run Hermes. To run the ARM64 compiler specifically, follow the instructions for hcX64, but replace hcX64 with hcA64.
+
 This is a short introduction for how to use the Hermes interpreter,
 partial evaluator, and compiler.
 
@@ -7,7 +9,7 @@ done so and unzipped Hermes.zip, you can compile the programs by
 
 source compile.sh
 
-This will generate four executables: hi, hr, hpe, and hcX64.
+This will generate five executables: hi, hr, hpe, hcX64 and hcA64.
 
 hi is the Hermes reference interpreter.  To run it, write
 
@@ -135,6 +137,8 @@ The inline assembler is wrapped in a C function that returns 0 if no
 assertions fail, and if an assertion fails in source line L column C,
 it returns 10000*L+C.  Note that a tab counts as one character when
 calculating columns.
+
+hcA64, the ARM64 compiler is run in the same way as hcX64, the x86-64 compiler. 
 
 The AES program uses a different main function that sets up some
 tables for sboxes and the mix-columns step, so use the -c option to

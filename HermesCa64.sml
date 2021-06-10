@@ -15,8 +15,6 @@ struct
   fun translateBop Hermes.Plus  pos = a64.ADD
     | translateBop Hermes.Minus pos = a64.SUB
     | translateBop Hermes.Times pos = a64.MUL
-    (* | translateBop Hermes.Divide = a64.DIV *)
-    (* | translateBop Hermes.Modulo = ????? *)
     | translateBop Hermes.Xor    pos = a64.EOR
     | translateBop Hermes.BAnd   pos = a64.AND
     | translateBop Hermes.BOr    pos = a64.ORR
@@ -69,24 +67,17 @@ struct
       Hermes.U8  => (a64.LDRB, a64.STRB, a64.RegisterW, 0)
     | Hermes.U16 => (a64.LDRH, a64.STRH, a64.RegisterW, 1)
     | Hermes.U32 => (a64.LDR,  a64.STR,  a64.RegisterW, 2)
-    | Hermes.U64 => (a64.LDR,  a64.STR,  a64.Register,  3)
+    | Hermes.U64 => (a64.LDR,   a64.STR,  a64.Register, 3)
 
   (* Create sequence of instructions to duplicate values to all bytes *)
   fun extendBits src size =
     let 
-      val r1 = a64.newRegister ()
       fun extend Hermes.U8 =
-          [(a64.LSL, a64.Register r1, src, a64.Imm(8)),
-          (a64.ORR, src, src, a64.Register r1)] @
+          [(a64.ORR, a64.Register src, a64.Register src, a64.Shifted (src, a64.LSL, 8))] @
           extend Hermes.U16
         | extend Hermes.U16 =
-          [(a64.LSL, a64.Register r1, src, a64.Imm(16)),
-          (a64.ORR, src, src, a64.Register r1)] @
-          extend Hermes.U32
-        | extend Hermes.U32 =
-          [(a64.LSL, a64.Register r1, src, a64.Imm(32)),
-          (a64.ORR, src, src, a64.Register r1)] @
-          extend Hermes.U64
+          [(a64.ORR, a64.Register src, a64.Register src, a64.Shifted (src, a64.LSL, 16))] 
+        | extend Hermes.U32 = []
         | extend Hermes.U64 = [] (*to silence compiler*)
     in
       (extend size)
@@ -423,7 +414,7 @@ struct
                   (load, save, t, tmpReg)
                 end
               | Hermes.Array(s, i, p) =>
-                (* loadcode and saveocde for array with non-constant index *)
+                (* loadcode and savecode for array with non-constant index *)
                 let
                   val (t, vReg) = lookup s env p
                   val iReg = a64.newRegister ()
@@ -444,16 +435,15 @@ struct
             )
           val updateCode =
             let
-              val updCode = [(opc, a64.Register resReg, a64.Register resReg, a64.Register eReg)]
+              val (_, _, regSize, _) = getForType t
+              val updCode = [(opc, regSize resReg, regSize resReg, regSize eReg)]
               val setup =
                 (case uop of
-                    Hermes.RoR => (extendBits (a64.Register resReg) t)
+                    Hermes.RoR => (extendBits resReg t)
                   | Hermes.RoL => 
                     let 
-                      val tmpReg = a64.newRegister()
-                      val setup   = (extendBits (a64.Register resReg) t) @ [
-                        (a64.MOV, a64.Register tmpReg, a64.Imm 64, a64.NoOperand),
-                        (a64.SUB, a64.Register eReg, a64.Register tmpReg, a64.Register eReg)]
+                      val setup   = (extendBits resReg t) @ [
+                        (a64.NEG, a64.Register eReg, a64.Register eReg, a64.NoOperand)]
                     in
                       setup
                     end

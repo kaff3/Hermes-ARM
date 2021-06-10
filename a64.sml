@@ -30,30 +30,6 @@ struct
     | LS  (* x <= y *)
     | NoCond
 
-  
-
-  datatype operand
-    = Register  of int          (*64 bit*)
-    | RegisterW of int          (*32 bit*)
-
-    | Imm       of int          (* #imm *)
-    | PoolLit   of string          (* Pool Literal *)
-    
-    (* Addressing modes *)
-    | ABase     of int             (* [base] *)
-    | ABaseOffR of int * int       (* [base, Rm] *)
-    | ABaseOffI of int * string    (* [base, #imm] *)
-    | APre      of int * string    (* [base, #imm]! *)
-    | APost     of int * string    (* [base], #imm *)
-
-    (* Specials *)
-    | Cond of cond
-    | Label_ of string
-    | SP 
-    | XZR
-    | WZR
-    | NoOperand
-
   datatype opcode
     (* memory *) 
     = LDR  | STR
@@ -72,10 +48,34 @@ struct
     | CMP
     | CSETM
     | B of cond
-
+    | NEG
     (* not actual opcodes *)
     | LABEL of string
     | REPLACESP 
+
+  datatype operand
+    = Register  of int          (*64 bit*)
+    | RegisterW of int          (*32 bit*)
+
+    | Imm       of int          (* #imm *)
+    | PoolLit   of string          (* Pool Literal *)
+    
+    (* Addressing modes *)
+    | ABase     of int             (* [base] *)
+    | ABaseOffR of int * int       (* [base, Rm] *)
+    | ABaseOffI of int * string    (* [base, #imm] *)
+    | APre      of int * string    (* [base, #imm]! *)
+    | APost     of int * string    (* [base], #imm *)
+
+    | Shifted of int * opcode * int     (* reg * <LSL|LSR> amount *)
+
+    (* Specials *)
+    | Cond of cond
+    | Label_ of string
+    | SP 
+    | XZR
+    | WZR
+    | NoOperand
 
   type inst = opcode * operand * operand * operand 
 
@@ -84,6 +84,41 @@ struct
     | showCondition HI = "HI"
     | showCondition LS = "LS"
     | showCondition NoCond = ""
+
+  fun showOpcode LDR = "LDR "
+    | showOpcode STR = "STR "
+    | showOpcode LDRB = "LDRB "
+    | showOpcode STRB = "STRB "
+    | showOpcode LDRH = "LDRH "
+    | showOpcode STRH = "STRH "
+    
+    | showOpcode ADD = "ADD "
+    | showOpcode SUB = "SUB "
+    | showOpcode MUL = "MUL "
+
+    | showOpcode ROR = "ROR "
+    | showOpcode EOR = "EOR "
+    | showOpcode LSL = "LSL "
+    | showOpcode LSR = "LSR "
+    | showOpcode ORR = "ORR "
+    | showOpcode MOV = "MOV "
+    | showOpcode MVN = "MVN "
+    | showOpcode AND = "AND "
+    | showOpcode RBIT = "RBIT "
+    | showOpcode CMP = "CMP "
+    | showOpcode CSETM = "CSETM "
+    | showOpcode NEG = "NEG "
+    | showOpcode (B c) = 
+      let
+        val dot = 
+          (case c of
+            NoCond => ""
+            | _ =>  "."
+          )
+      in
+        "B"^ dot ^ showCondition c ^ " "
+      end
+    | showOpcode _ = "missing case in showOpcode"
 
   fun showOperand (Register r) =
       let val regNum = Int.toString r in 
@@ -131,44 +166,19 @@ struct
     | showOperand XZR = "XZR"
     | showOperand WZR = "WZR"
     | showOperand NoOperand = ""
+    | showOperand (Shifted (r, _, a)) = 
+      let
+        val reg = (Int.toString r) 
+        (* val opc = (showOpcode o) *)
+        val amount = (Int.toString a)
+      in
+        "X" ^ reg ^ "," ^ "LSL " ^ "#" ^ amount
+      end
     | showOperand _ = "missing case in showOperand"
 
-  fun showOpcode LDR = "LDR "
-    | showOpcode STR = "STR "
-    | showOpcode LDRB = "LDRB "
-    | showOpcode STRB = "STRB "
-    | showOpcode LDRH = "LDRH "
-    | showOpcode STRH = "STRH "
-    
-    | showOpcode ADD = "ADD "
-    | showOpcode SUB = "SUB "
-    | showOpcode MUL = "MUL "
 
-    | showOpcode ROR = "ROR "
-    | showOpcode EOR = "EOR "
-    | showOpcode LSL = "LSL "
-    | showOpcode LSR = "LSR "
-    | showOpcode ORR = "ORR "
-    | showOpcode MOV = "MOV "
-    | showOpcode MVN = "MVN "
-    | showOpcode AND = "AND "
-    | showOpcode RBIT = "RBIT "
-    | showOpcode CMP = "CMP "
-    | showOpcode CSETM = "CSETM "
-    | showOpcode (B c) = 
-      let
-        val dot = 
-          (case c of
-            NoCond => ""
-            | _ =>  "."
-          )
-      in
-        "B"^ dot ^ showCondition c ^ " "
-      end
-    | showOpcode _ = "missing case in showOpcode"
-
-  fun printInstruction (opc, op1, op2 ,op3) =
-    case opc of
+  fun printInstruction (opc, op1, op2, op3) =
+    (case opc of
       (LABEL l) => "\"" ^ l ^ ":\\n\\t\"\n"
       | _ =>
         let
@@ -181,6 +191,7 @@ struct
           (* Test if label or something else. Set comma accordingly  *)
           "\"" ^ opc ^ op1 ^ op2 ^ op3 ^ "\\n\\t\"\n"
         end
+    )
   
   (* Register allocator helper functions *)
   fun setUnion [] = Splayset.empty Int.compare
@@ -233,6 +244,7 @@ struct
     | ABaseOffR (r1, r2) => [r1, r2]
     | APre (r, _) => [r]
     | APost (r, _) => [r]
+    | Shifted (r, _, _) => [r]
     | _ => []
 
   fun regsWritten operand =
@@ -462,6 +474,7 @@ struct
     | SP => SP
     | XZR => XZR
     | WZR => WZR
+    | Shifted (r, _, a) => Shifted (mapping r, LSL, a)
     | NoOperand => NoOperand
 
   fun notSelfMove inst = 
@@ -490,6 +503,7 @@ struct
         ABaseOffR (if x = y then x1 else y, if x = z then x1 else z)
     | APre (y, z) => if x = y then APre (x1, z) else ope
     | APost (y, z) => if x = y then APost (x1, z) else ope
+    | Shifted (r, _, a) => if x = r then Shifted (x1, LSL, a) else ope
     | _ => ope
 
   fun replaceReg x x1 (opc, op1, op2, op3) =
