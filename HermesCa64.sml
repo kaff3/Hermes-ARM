@@ -44,7 +44,8 @@ struct
     case size of
         Hermes.U8 => [(a64.AND, src, src, a64.Imm(0xff))]
       | Hermes.U16 => [(a64.AND, src, src, a64.Imm(0xffff))]
-      | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))]
+      | Hermes.U32 => []
+      (* | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))] *)
       | Hermes.U64 => []
 
   fun type2Bytes t =
