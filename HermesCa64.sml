@@ -796,7 +796,12 @@ fun replaceSPOff [] offset = []
       val arglist = HermesCx64.compileCArgs args
       val (env, prologue1, epilogue0) = compileA64Args args parameterLocations
       val saveCallee = (* save callee-saves variables *)
-            [(a64.STR, a64.Register 19, a64.ABaseOffI (a64.fp, "-56"), a64.NoOperand),
+            [
+            (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
+            (* placeholder for moving SP *)
+            (a64.REPLACESP, a64.NoOperand, a64.NoOperand, a64.NoOperand),
+
+            (a64.STR, a64.Register 19, a64.ABaseOffI (a64.fp, "-56"), a64.NoOperand),
             (a64.STR, a64.Register 20, a64.ABaseOffI (a64.fp, "-64"), a64.NoOperand),
             (a64.STR, a64.Register 21, a64.ABaseOffI (a64.fp, "-72"), a64.NoOperand),
             (a64.STR, a64.Register 22, a64.ABaseOffI (a64.fp, "-80"), a64.NoOperand),
@@ -806,13 +811,10 @@ fun replaceSPOff [] offset = []
             (a64.STR, a64.Register 26, a64.ABaseOffI (a64.fp, "-112"), a64.NoOperand),
             (a64.STR, a64.Register 27, a64.ABaseOffI (a64.fp, "-120"), a64.NoOperand),
             (a64.STR, a64.Register 28, a64.ABaseOffI (a64.fp, "-128"), a64.NoOperand),
-            (* save SP, USE PSEUDO-REG INSTEAD? *)
-            (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
+
             (a64.STR, a64.Register 9, a64.ABaseOffI (a64.fp, "-136"), a64.NoOperand),
             (* error code *)
-            (a64.STR, a64.XZR, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand),
-            (* placeholder for moving SP *)
-            (a64.REPLACESP, a64.NoOperand, a64.NoOperand, a64.NoOperand)] 
+            (a64.STR, a64.XZR, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
       val bodyCode = compileStat body env
       val epilogue1 =
             [(a64.LABEL ("exit_label_"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
