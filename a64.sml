@@ -194,28 +194,28 @@ struct
     )
   
   (* Register allocator helper functions *)
-  fun setUnion [] = Splayset.empty Int.compare
+  fun setUnion [] = Binaryset.empty Int.compare
     | setUnion [s] = s
-    | setUnion (s :: ss) = Splayset.union (setUnion ss, s)
+    | setUnion (s :: ss) = Binaryset.union (setUnion ss, s)
 
-  val emptyset = Splayset.empty Int.compare
+  val emptyset = Binaryset.empty Int.compare
 
-  fun setMinus xs ys = Splayset.difference (xs, ys)
+  fun setMinus xs ys = Binaryset.difference (xs, ys)
 
-  fun list2set ll = Splayset.addList (Splayset.empty Int.compare, ll)
+  fun list2set ll = Binaryset.addList (Binaryset.empty Int.compare, ll)
 
   fun pairOrder ((x1,y1), (x2,y2)) =
     if x1 < x2 orelse x1 = x2 andalso y1 < y2 then LESS
     else if x1 = x2 andalso y1 = y2 then EQUAL
     else GREATER
 
-  (* used for splaysets of pairs *)
-  fun setUnionP [] = Splayset.empty pairOrder
+  (* used for Binarysets of pairs *)
+  fun setUnionP [] = Binaryset.empty pairOrder
     | setUnionP [s] = s
     | setUnionP (s :: ss) =
-       Splayset.union (setUnionP ss, s)
+       Binaryset.union (setUnionP ss, s)
 
-  fun list2setP ll = Splayset.addList (Splayset.empty pairOrder, ll)
+  fun list2setP ll = Binaryset.addList (Binaryset.empty pairOrder, ll)
 
   fun signedToString n = (if n<0 then "-" else "") ^ Int.toString (Int.abs n)
 
@@ -329,27 +329,27 @@ struct
         (case (op1, op2) of
         (Register x, Register y) => 
           setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
-            (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))] 
+            (fn z => [(x, z), (z, x)]) (Binaryset.listItems (setMinus lOut (list2set [x,y])))))] 
         | (Register x, RegisterW y) => 
           setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
-              (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]
+              (fn z => [(x, z), (z, x)]) (Binaryset.listItems (setMinus lOut (list2set [x,y])))))]
         | (RegisterW x, Register y) => 
           setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
-              (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]
+              (fn z => [(x, z), (z, x)]) (Binaryset.listItems (setMinus lOut (list2set [x,y])))))]
         | (RegisterW x, RegisterW y) => 
           setUnionP[interfere ins ls ks, list2setP(List.concat (List.map 
-              (fn z => [(x, z), (z, x)]) (Splayset.listItems (setMinus lOut (list2set [x,y])))))]
+              (fn z => [(x, z), (z, x)]) (Binaryset.listItems (setMinus lOut (list2set [x,y])))))]
         | _ => 
           setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
               (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
-                      (Splayset.listItems (setMinus lOut (list2set [x])))))
-                      (Splayset.listItems k)))]
+                      (Binaryset.listItems (setMinus lOut (list2set [x])))))
+                      (Binaryset.listItems k)))]
         )
       | (_ :: ins, lOut :: ls, k :: ks) =>
         setUnionP[interfere ins ls ks, list2setP(List.concat(List.map
             (fn x => List.concat (List.map (fn y => [(x, y), (y,x)]) 
-                    (Splayset.listItems (setMinus lOut (list2set [x])))))
-                    (Splayset.listItems k)))]
+                    (Binaryset.listItems (setMinus lOut (list2set [x])))))
+                    (Binaryset.listItems k)))]
       | _ => list2setP []
 
   (* find node with fewest neighbours *)
@@ -404,9 +404,9 @@ struct
         (* can then use same register and will increase num of assignments to be removed *)
         (* determine if (x, mapping y) is a pair in moves and if mapping y is in freeregs*)
         
-        val moveRelated = Splayset.find 
-              (fn (x1, y1) => x1 = x andalso Splayset.member (freeRegs, (mapping y1))) moves
-        val freeRegs1 = Splayset.listItems freeRegs
+        val moveRelated = Binaryset.find 
+              (fn (x1, y1) => x1 = x andalso Binaryset.member (freeRegs, (mapping y1))) moves
+        val freeRegs1 = Binaryset.listItems freeRegs
 
         val selected =
           case (moveRelated, freeRegs1) of
@@ -423,7 +423,7 @@ struct
     | bestSpill ((x1,ys1) :: neighbours) uses (x,ys,score) =
       let
         val _ = TextIO.output (TextIO.stdErr, "looking for spill \n")
-        val usesOfx1 = Splaymap.find (uses,x1)
+        val usesOfx1 = Binarymap.find (uses,x1)
         val score1 = (10000 * List.length ys1) div (usesOfx1 + 1)
                       (* many neighbours and few uses is better *)
 	    in
@@ -513,9 +513,9 @@ struct
     | spill x offset (instr :: instrs) =
       let
         val reads1 = generateLiveness instr
-        val reads = Splayset.member (reads1, x)
+        val reads = Binaryset.member (reads1, x)
         val writes1 = killLiveness instr
-        val writes = Splayset.member (writes1,x)
+        val writes = Binaryset.member (writes1,x)
         val instrs1 = spill x offset instrs
         val x1 = newRegister ()
 	    in
@@ -549,16 +549,16 @@ struct
 	    end
 
 
-  fun findUses [] = Splaymap.mkDict Int.compare
+  fun findUses [] = Binarymap.mkDict Int.compare
     | findUses (inst :: instrs) =
       let
         val uses = findUses instrs
-        val regs = Splayset.listItems
+        val regs = Binaryset.listItems
                     (setUnion [generateLiveness inst, killLiveness inst])
       in
-        List.foldl(fn (r, u) => case Splaymap.peek (u, r) of 
-	                    NONE => Splaymap.insert (u,r,1) 
-	                  | SOME c => Splaymap.insert (u,r,c+1))
+        List.foldl(fn (r, u) => case Binarymap.peek (u, r) of 
+	                    NONE => Binarymap.insert (u,r,1) 
+	                  | SOME c => Binarymap.insert (u,r,c+1))
             uses regs
 	end
 
@@ -586,7 +586,7 @@ struct
       val kill = List.map killLiveness instrs                               (* liveness killed *)
       val liveOut = liveness instrs gen kill                                (* propagation *)
       val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
-      val interference = Splayset.listItems interference0
+      val interference = Binaryset.listItems interference0
       val uses = findUses instrs                   
       val moves = setUnionP (List.map getMoves instrs) (* find move instructions *)
       val mapping = colourGraph interference moves uses

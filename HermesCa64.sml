@@ -761,16 +761,6 @@ fun zeroRegisters [] = []
       (a64.EOR, a64.Register reg, a64.Register reg, a64.Register reg) :: regsZeroed
     end
 
-(* create list of unused parameter registers *)
-(* takes number of used parameter registers as input *)
-fun unusedParaRegisters regVal =
-    if regVal > 7 orelse regVal < 1 then [] 
-    else 
-      let
-        val regs = unusedParaRegisters (regVal + 1)
-      in
-        regVal :: regs
-      end
 (* update SP to correct offset after reg allocator *)
 fun replaceSPOff [] offset = []
   | replaceSPOff ((a64.REPLACESP, _, _, _) :: instrs) offset =
@@ -836,7 +826,7 @@ fun replaceSPOff [] offset = []
       
       (* Zero Caller-Saved registers *)
       (* x9 - x15 and unused parameter registers *)
-      val callerSavedToZero = unusedParaRegisters (List.length args) @ a64.callerSaves
+      val callerSavedToZero = [1,2,3,4,5,6,7] @ a64.callerSaves
       val epilogue3 = zeroRegisters callerSavedToZero
 
       val allCode =
