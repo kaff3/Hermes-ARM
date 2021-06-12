@@ -749,7 +749,7 @@ fun zeroOffsets [] = []
     in
       [(a64.LDR, a64.Register 9, a64.PoolLit offset, a64.NoOperand),
        (a64.STR, a64.XZR, a64.ABaseOffR(a64.fp, 9), a64.NoOperand)] 
-       :: offsetsZeroed
+       @ offsetsZeroed
     end
 
 (* generates code to zero the input list of registers *)
@@ -833,7 +833,8 @@ fun replaceSPOff [] offset = []
             prologue1 @ saveCallee  @ bodyCode  @
       epilogue0 @ epilogue1 @ restoreCallee @ epilogue3
       val (newCode, offset, offsetsToZero) = a64.registerAllocate allCode
-      val newCode1 = replaceSPOff newCode (offset)
+      val zeroSpilled = zeroOffsets offsetsToZero
+      val newCode1 = (replaceSPOff newCode (offset)) @ zeroSpilled
     in
       "int " ^ f ^ "(" ^ arglist ^ ")\n" ^
       "{\n  asm volatile ( \n" ^

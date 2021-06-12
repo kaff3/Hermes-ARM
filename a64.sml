@@ -1,6 +1,4 @@
 (* Types for A64 *)
-
-
 structure a64 =
 struct
 
@@ -11,6 +9,7 @@ struct
   val callerSaves = [8,9,10,11,12,13,14,15,16,17]
   val calleeSaves = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
   val fp = 29
+  val allocatableRegs = argRegs @ callerSaves @ calleeSaves
 
   (* Used for pseudo-registers*)
   val regCounter = ref 31
@@ -18,11 +17,6 @@ struct
   fun newRegister () =
     (regCounter := !regCounter + 1;
      !regCounter)
-
-  (* datatype ext 
-    = UXTW
-    | UXTX
-    | NoExt *)
 
   datatype cond
     = EQ | NE
@@ -33,8 +27,8 @@ struct
   datatype opcode
     (* memory *) 
     = LDR  | STR
-    | LDRB | STRB     (* <--                             *)
-    | LDRH | STRH     (* <-- Remember to use W registers!*)
+    | LDRB | STRB 
+    | LDRH | STRH    
     (* arithmic *)
     | ADD | SUB
     | MUL
@@ -193,7 +187,8 @@ struct
         end
     )
   
-  (* Register allocator helper functions *)
+  (*  REGISTER ALLOCATOR *)
+  (* helper functions *)
   fun setUnion [] = Binaryset.empty Int.compare
     | setUnion [s] = s
     | setUnion (s :: ss) = Binaryset.union (setUnion ss, s)
@@ -389,8 +384,8 @@ struct
 	    end
 
 
-  val allocatable = list2set (argRegs @ callerSaves @ calleeSaves)
-  val numAllocatable = List.length (argRegs @ callerSaves @ calleeSaves)
+  val allocatable = list2set (allocatableRegs)
+  val numAllocatable = List.length (allocatableRegs)
 
   (* select step of graph colouring *)
   fun select [] moves mapping = mapping
@@ -489,7 +484,7 @@ struct
       )
     | _ => true
 
-  (* FUNCTIONS FOR SPILLED VARIABLES *)
+  (* FUNCTIONS FOR SPILLING *)
   val spillOffset = ref (~152)
   val usedOffsets = ref []
   
@@ -596,7 +591,7 @@ struct
           val newInstrs = List.map (reColour mapping) instrs
           val withoutSelf = List.filter notSelfMove newInstrs
         in
-          (withoutSelf, !spillOffset - 16, usedOffsets)
+          (withoutSelf, !spillOffset - 16, !usedOffsets)
         end
       else
       (* if we have spilled variables, do register allocation again *)
