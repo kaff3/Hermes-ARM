@@ -48,10 +48,10 @@ struct
     | REPLACESP 
 
   datatype operand
-    = Register  of int          (*64 bit*)
-    | RegisterW of int          (*32 bit*)
+    = Register  of int             (*64 bit*)
+    | RegisterW of int             (*32 bit*)
 
-    | Imm       of int          (* #imm *)
+    | Imm       of int             (* #imm *)
     | PoolLit   of string          (* Pool Literal *)
     
     (* Addressing modes *)
@@ -129,7 +129,6 @@ struct
       else
         "=0x" ^ n
     | showOperand (ABaseOffI (r, off)) =
-      (*TODO: immediate size check?*)
       let
         val regNum = Int.toString r
       in
@@ -163,7 +162,6 @@ struct
     | showOperand (Shifted (r, _, a)) = 
       let
         val reg = (Int.toString r) 
-        (* val opc = (showOpcode o) *)
         val amount = (Int.toString a)
       in
         "X" ^ reg ^ "," ^ "LSL " ^ "#" ^ amount
@@ -182,12 +180,11 @@ struct
           val op2 = c2 ^ (showOperand op2)
           val op3 = c3 ^ (showOperand op3)
         in 
-          (* Test if label or something else. Set comma accordingly  *)
           "\"" ^ opc ^ op1 ^ op2 ^ op3 ^ "\\n\\t\"\n"
         end
     )
   
-  (*  REGISTER ALLOCATOR *)
+  (* REGISTER ALLOCATOR *)
   (* helper functions *)
   fun setUnion [] = Binaryset.empty Int.compare
     | setUnion [s] = s
@@ -354,11 +351,6 @@ struct
         fewestNeighbours neighbours (x1,ys1)
       else fewestNeighbours neighbours (x,ys)
 
-  (* registers that can be allocated -- NOT FP (29)*)
-  (* maybe not r16-r18 and r30 *)
-  (* https://wiki.cdot.senecacollege.ca/wiki/AArch64_Register_and_Instruction_Quick_Start *)
-  (* remember to also change in other places then *)
-
   (* remove node from graph *)
   fun remove x [] = []
     | remove x ((x1,ys) :: neighbours) =
@@ -420,7 +412,7 @@ struct
         val _ = TextIO.output (TextIO.stdErr, "looking for spill \n")
         val usesOfx1 = Binarymap.find (uses,x1)
         val score1 = (10000 * List.length ys1) div (usesOfx1 + 1)
-                      (* many neighbours and few uses is better *)
+      (* many neighbours and few uses is better *)
 	    in
         if score1 > score
         then bestSpill neighbours uses (x1,ys1,score1)
@@ -452,7 +444,7 @@ struct
   fun reColour mapping (opc, op1, op2, op3) =
     (opc, reColourOp mapping op1, reColourOp mapping op2,  reColourOp mapping op3)
 
-  (*TODO: Maybe create wildcard case as in replaceRegOp*)
+
   and reColourOp mapping oper =
     case oper of
       Register r => Register (mapping r)
@@ -577,21 +569,22 @@ struct
   fun registerAllocate instrs = 
     let 
       val _ = spilled := []
-      val gen = List.map generateLiveness instrs                            (* liveness generation *)
-      val kill = List.map killLiveness instrs                               (* liveness killed *)
-      val liveOut = liveness instrs gen kill                                (* propagation *)
-      val interference0 = interfere instrs liveOut kill                     (* interference: pairs of overlapping pseudoregs *)
+      val gen = List.map generateLiveness instrs           (* liveness generation *)
+      val kill = List.map killLiveness instrs              (* liveness killed *)
+      val liveOut = liveness instrs gen kill               (* propagation *)
+      val interference0 = interfere instrs liveOut kill    (* interference: pairs of overlapping pseudoregs *)
       val interference = Binaryset.listItems interference0
       val uses = findUses instrs                   
-      val moves = setUnionP (List.map getMoves instrs) (* find move instructions *)
+      val moves = setUnionP (List.map getMoves instrs)     (* find move instructions *)
       val mapping = colourGraph interference moves uses
     in
       if null (!spilled) then
         let
           val newInstrs = List.map (reColour mapping) instrs
           val withoutSelf = List.filter notSelfMove newInstrs
+          val align = if !spillOffset mod 16 = 0 then 16 else 8 
         in
-          (withoutSelf, !spillOffset - 16, !usedOffsets)
+          (withoutSelf, !spillOffset - align, !usedOffsets)
         end
       else
       (* if we have spilled variables, do register allocation again *)

@@ -79,8 +79,8 @@ struct
                | HermesCx64.Error (mess, (lin,col)) =>
                      errorMess ("Compile error: " ^mess^ " at line "
                       ^ makestring lin ^ ", column " ^ makestring col)
-               | a64.Error (mess) => (*<----------------------------------------------------------------------------------------!!!!*)
-                     errorMess ("x86 error: " ^ mess)
+               | a64.Error (mess) =>
+                     errorMess ("a64 error: " ^ mess)
 
                | SysErr (s,_) => errorMess ("Exception: " ^ s)
                | Subscript =>  errorMess "subscript error"

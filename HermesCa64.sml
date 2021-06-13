@@ -3,9 +3,8 @@
 structure HermesCa64 = 
 struct
 
-  (*
-      Functions for translanting between Hermes and arm instructions
-  *)
+  (*----- Helper Functions -----*)
+  (* Functions for translanting between Hermes and arm instructions *)
   fun translateUop Hermes.Add = a64.ADD
     | translateUop Hermes.Sub = a64.SUB
     | translateUop Hermes.RoL = a64.ROR (*Take care!!!*)
@@ -23,7 +22,6 @@ struct
     | translateBop _ pos = raise HermesCx64.Error("Binop not implemented", pos)
     
 
-  (*----- Helper Functions -----*)
 
   fun decToHex dec =
     if String.isPrefix "0x" dec then
@@ -45,7 +43,6 @@ struct
         Hermes.U8 => [(a64.AND, src, src, a64.Imm(0xff))]
       | Hermes.U16 => [(a64.AND, src, src, a64.Imm(0xffff))]
       | Hermes.U32 => []
-      (* | Hermes.U32 => [(a64.AND, src, src, a64.Imm(0xffffffff))] *)
       | Hermes.U64 => []
 
   fun type2Bytes t =
@@ -97,9 +94,7 @@ struct
     | debugStat (Hermes.Block(_,_,_))       = "Block"
     | debugStat (Hermes.Assert(_,_))        = "Assert" 
 
-  (*
-      Functions used for compiling
-  *)
+  (* ------ Functions used for compiling ------*)
 
   (* lookup in environment *)
   fun lookup x [] pos =
@@ -143,9 +138,6 @@ struct
                       | _ => (9999, 9999) (* should never happen *)
                     )
                 )
-              (* TODO: Behøver måske ikke tjekke med mulOf. Skulle meget gerne altid
-                 Være det? *)
-              (* TODO: Potential sidechannel attack? *)
               val ldrCode =
                 if offset < maxImm andalso offset mod mulOf = 0 then
                   [(ldr, reg target, a64.ABaseOffI(vReg, int2String offset), a64.NoOperand)] 
@@ -183,20 +175,12 @@ struct
 
       | Hermes.Un (Hermes.Negate, e, p) =>
         let
-          (*Always on 64-bit values? *)
           val eCode = compileExp e target env p
           val negCode = [(a64.MVN, a64.Register target, a64.Register target, a64.NoOperand)]
         in
           eCode @ negCode
         end
-      
-      (* Binary operator with right side being a constant *)
-      (* | Hermes.Bin (bop, e1, Hermes.Const(n, _), p) =>
-        let
-          val e1Reg  = a64.newRegister ()
-          val e1Code = compileExp e1 e1Reg env p
-        in
-        end *)
+
 
       (* Binary operator *)
       | Hermes.Bin (bop, e1, e2, p) =>
@@ -211,11 +195,11 @@ struct
                 val cond =
                   (case bop of 
                       Hermes.Equal   => a64.EQ
-                    | Hermes.Less    => a64.HI (*  *)
+                    | Hermes.Less    => a64.HI (* <--- *)
                     | Hermes.Greater => a64.HI
                     | Hermes.Neq     => a64.NE
                     | Hermes.Leq     => a64.LS
-                    | Hermes.Geq     => a64.LS
+                    | Hermes.Geq     => a64.LS (* <--- *)
                     | _ => raise HermesCx64.Error ("Condition not implemented", p)
                   )
                 val compCode = 
@@ -230,15 +214,6 @@ struct
                       (a64.CMP, a64.Register target, a64.Register e2Reg, a64.NoOperand),
                       (a64.CSETM, a64.Register target, a64.Cond cond, a64.NoOperand)
                     ]
-                (* val handleCode =
-                  if bop = Hermes.Geq then
-                    [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.EQ, a64.NoOperand),
-                     (a64.ORR, a64.Register target, a64.Register target, a64.Register tmpReg)]
-                  else if bop = Hermes.Less then
-                    [(a64.CSETM, a64.Register tmpReg, a64.Cond a64.NE, a64.NoOperand),
-                     (a64.AND, a64.Register target, a64.Register target, a64.Register tmpReg)]
-                  else
-                    [] *)
               in
                 compCode
               end
@@ -253,7 +228,6 @@ struct
           Hermes.Const (n, p1)=>
             let
               val (t, vReg) = lookup x env p1
-              (* find byte size *)
               val (ldrOpcode, regSize, immSize) =
                 case t of
                   Hermes.U8  => (a64.LDRB, a64.RegisterW, "1")
@@ -265,8 +239,6 @@ struct
               val iReg    = a64.newRegister ()
               val orReg   = a64.newRegister ()
 
-              (* TODO: can maybe use vReg instead of iReg
-                  as vReg dies *)
               val initCode = [
                 (a64.MOV, a64.Register orReg, a64.XZR, a64.NoOperand),
                 (a64.MOV, a64.Register iReg, a64.Register vReg, a64.NoOperand)]
@@ -278,12 +250,6 @@ struct
                     (a64.LDR, a64.Register tmpReg, a64.APost(iReg, immSize), a64.NoOperand),
                     (a64.ORR, a64.Register orReg, a64.Register orReg, a64.Register tmpReg)
                   ])
-              (* val orCode =
-                List.tabulate (HermesCx64.fromNumString n,
-                  fn i => [
-                    (ldrOpcode, regSize tmpReg, a64.APost(iReg, immSize), a64.NoOperand),
-                    (a64.ORR, regSize orReg, regSize orReg, regSize tmpReg)
-                  ]) *)
               val testCode = [
                 (a64.CMP, a64.Register orReg, a64.Imm 0, a64.NoOperand),
                 (a64.CSETM, a64.Register target, a64.Cond a64.EQ, a64.NoOperand)
@@ -297,7 +263,7 @@ struct
       | _ => [(a64.LABEL ("compilExp:" ^ Hermes.showExp exp true), 
               a64.NoOperand, a64.NoOperand, a64.NoOperand)]
 
-  (*  *)
+
   fun compileDecs [] env = ([], [], env)
     | compileDecs (Hermes.ConstDecl (_,_,pos) :: ds) env =
       raise HermesCx64.Error ("Constants should have been eliminated by PE", pos)
@@ -320,7 +286,6 @@ struct
           val r = a64.newRegister ()
           val env1 = (x, (it, r)) :: env
           val (alloc, dealloc, env2) = compileDecs ds env1
-          (* Find out which STR opcode to use *)
           val (strOpcode, regSize, immSize, zr) = 
             (case it of
               Hermes.U8    => (a64.STRB, a64.RegisterW, "1", a64.WZR)
@@ -336,15 +301,11 @@ struct
           val clearCode =
             List.tabulate (numStores,
                fn _ => (a64.STR, a64.XZR, a64.APost(tmpReg, "8"), a64.NoOperand))
-          (* val clearCode =
-            List.tabulate (HermesCx64.fromNumString n,
-              fn i => (strOpcode, zr, a64.APost(tmpReg, immSize), a64.NoOperand)) *)
-          (* TODO: sub amount fits within imm optimization? *)
           val subReg = a64.newRegister ()
           val subCode = 
             [(a64.LDR, a64.Register subReg, a64.PoolLit (decToHex (Int.toString alignment)), a64.NoOperand)]
 
-          (*stack pointer restore*)
+          (* restore stack pointer *)
           val restoreCode = [(a64.ADD, a64.SP, a64.SP, a64.Register subReg)]
         in
           (
@@ -364,6 +325,7 @@ struct
       | Hermes.Update (uop, Hermes.UnsafeArray(s, i, p), e, pos) =>
         (* Whenever an update with a unsafe array convert it to a safe array *)
         compileStat (Hermes.Update (uop, Hermes.Array (s, i, p), e, pos)) env
+      
       | Hermes.Update (uop, lval, e, pos) =>
         let
           val opc = translateUop uop
@@ -380,7 +342,7 @@ struct
                   ([], (maskDown (a64.Register vReg) t), t, vReg)
                 end
               | Hermes.Array(s, Hermes.Const(i, p2), p1) =>
-                (* loadcode and saveocde for array with constant index *)
+                (* loadcode and savecode for array with constant index *)
                 let
                   val (t, vReg) = lookup s env p1
                   val (ldr, str, reg, _) = getForType t
@@ -393,7 +355,7 @@ struct
                   )
                   val offset = size * (string2Int i)
 
-                  val tmpReg = a64.newRegister () (*load value to*)
+                  val tmpReg = a64.newRegister () (* load value to here *)
                   val oReg = a64.newRegister ()
 
                   val load =
@@ -699,10 +661,6 @@ struct
                 a64.Register (x) =>
                   ([(ldrOpcode, regSize r, a64.ABase x, a64.NoOperand)],
                    [(strOpcode, regSize r, a64.ABase x, a64.NoOperand)])
-                  (* ([(a64.MOV, a64.Register r1, l1, a64.NoOperand), (* can maybe delete *)
-                    (ldrOpcode, regSize r, a64.ABase r1, a64.NoOperand)],
-                   [(strOpcode, regSize r, a64.ABase r1, a64.NoOperand)]
-                  ) *)
 
                 | a64.ABaseOffI (_, _) => 
                   ([(a64.LDR, a64.Register r1, l1, a64.NoOperand),
@@ -714,8 +672,6 @@ struct
                     "Location has to be Register or stack offset. Should never happen.", (0,0))
               )
           in
-            (* call by value result *)
-            (* TODO: update to load to register *)
             ((x, (it, r)) :: env,
             locCode1 @ code1,
             code2 @ locCode2)
@@ -785,7 +741,7 @@ fun replaceSPOff [] offset = []
                   ["-16","-24","-32","-40","-48"] 
       val arglist = HermesCx64.compileCArgs args
       val (env, prologue1, epilogue0) = compileA64Args args parameterLocations
-      val saveCallee = (* save callee-saves variables *)
+      val saveCallee =
             [
             (a64.MOV, a64.Register 9, a64.SP, a64.NoOperand),
             (* placeholder for moving SP *)
@@ -809,7 +765,7 @@ fun replaceSPOff [] offset = []
       val epilogue1 =
             [(a64.LABEL ("exit_label_"), a64.NoOperand, a64.NoOperand, a64.NoOperand),
             (a64.LDR, a64.Register 0, a64.ABaseOffI (a64.fp, "-144"), a64.NoOperand)]
-      val restoreCallee = (* restore callee-saves variables *)
+      val restoreCallee =
             [(a64.LDR, a64.Register 19, a64.ABaseOffI (a64.fp, "-56"), a64.NoOperand),
             (a64.LDR, a64.Register 20, a64.ABaseOffI (a64.fp, "-64"), a64.NoOperand),
             (a64.LDR, a64.Register 21, a64.ABaseOffI (a64.fp, "-72"), a64.NoOperand),
