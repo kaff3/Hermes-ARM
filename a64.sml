@@ -582,9 +582,8 @@ struct
         let
           val newInstrs = List.map (reColour mapping) instrs
           val withoutSelf = List.filter notSelfMove newInstrs
-          val align = if !spillOffset mod 16 = 0 then 16 else 8 
         in
-          (withoutSelf, !spillOffset - align, !usedOffsets)
+          (withoutSelf, !spillOffset - 8, !usedOffsets)
         end
       else
       (* if we have spilled variables, do register allocation again *)
